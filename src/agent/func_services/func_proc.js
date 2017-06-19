@@ -1,60 +1,55 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-
-try {
-    process.on('uncaughtException', fail);
-    process.on('unhandledRejection', fail);
+function run(msg, callback) {
+    // console.log('func_proc: received message', msg);
 
     const path = require('path'); // eslint-disable-line global-require
     const AWS = require('aws-sdk'); // eslint-disable-line global-require
 
-    process.once('message', msg => {
+    if (msg.aws_config) {
+        AWS.config.update(msg.aws_config);
+    }
 
-        // console.log('func_proc: received message', msg);
+    const handler_arg = msg.config.handler;
+    const handler_split = handler_arg.split('.', 2);
+    const module_name = handler_split[0] + '.js';
+    const export_name = handler_split[1];
+    // eslint-disable-next-line global-require
+    const module_exports = require(path.resolve(module_name));
+    const handler = export_name ?
+        module_exports[export_name] :
+        module_exports;
 
-        if (msg.aws_config) {
-            AWS.config.update(msg.aws_config);
-        }
+    if (typeof(handler) !== 'function') {
+        fail(new Error(`Func handler not a function ${handler_arg}`));
+    }
 
-        const handler_arg = msg.config.handler;
-        const handler_split = handler_arg.split('.', 2);
-        const module_name = handler_split[0] + '.js';
-        const export_name = handler_split[1];
-        // eslint-disable-next-line global-require
-        const module_exports = require(path.resolve(module_name));
-        const handler = export_name ?
-            module_exports[export_name] :
-            module_exports;
+    // http://docs.aws.amazon.com/lambda/latest/dg/nodejs-prog-model-context.html
+    const context = {
+        callbackWaitsForEmptyEventLoop: false,
+        functionName: '',
+        functionVersion: '',
+        invokedFunctionArn: '',
+        memoryLimitInMB: 0,
+        awsRequestId: '',
+        logGroupName: '',
+        logStreamName: '',
+        identity: null,
+        clientContext: null,
+        getRemainingTimeInMillis: () => 60 * 1000, // TODO calculate timeout
+    };
 
-        if (typeof(handler) !== 'function') {
-            fail(new Error(`Func handler not a function ${handler_arg}`));
-        }
+    if (msg.rpc_options) {
+        const api = require('../../api'); // eslint-disable-line global-require
+        const rpc = api.new_rpc(msg.rpc_options.address);
+        const client = rpc.new_client();
+        client.options = msg.rpc_options;
+        context.rpc_client = client;
+    }
 
-        // http://docs.aws.amazon.com/lambda/latest/dg/nodejs-prog-model-context.html
-        const context = {
-            callbackWaitsForEmptyEventLoop: false,
-            functionName: '',
-            functionVersion: '',
-            invokedFunctionArn: '',
-            memoryLimitInMB: 0,
-            awsRequestId: '',
-            logGroupName: '',
-            logStreamName: '',
-            identity: null,
-            clientContext: null,
-            getRemainingTimeInMillis: () => 60 * 1000, // TODO calculate timeout
-        };
-
-        if (msg.rpc_options) {
-            const api = require('../../api'); // eslint-disable-line global-require
-            const rpc = api.new_rpc(msg.rpc_options.address);
-            const client = rpc.new_client();
-            client.options = msg.rpc_options;
-            context.rpc_client = client;
-        }
-
-        const callback = (err, reply) => {
+    if (!callback) {
+        callback = (err, reply) => {
             if (err) {
                 console.log('func_proc: callback', err);
                 if (context.callbackWaitsForEmptyEventLoop) {
@@ -71,12 +66,9 @@ try {
                 success(reply);
             }
         };
+    }
 
-        handler(msg.event, context, callback);
-    });
-
-} catch (err) {
-    fail(err);
+    handler(msg.event, context, callback);
 }
 
 function fail(err) {
@@ -95,4 +87,16 @@ function success(result) {
     process.send({
         result: result
     }, () => process.exit(1));
+}
+
+exports.run = run;
+
+if (require.main === module) {
+    try {
+        process.on('uncaughtException', fail);
+        process.on('unhandledRejection', fail);
+        process.once('message', msg => run(msg));
+    } catch (err) {
+        fail(err);
+    }
 }
