@@ -30,7 +30,7 @@ const SERVICES = [{
 }, {
     name: 'mongo',
     spawn: 'mongod',
-    args: ['-f', 'mongod.conf']
+    args: ['-f', 'src/deploy/dev/mongod.conf']
 }];
 
 if (require.main === module) {

@@ -337,12 +337,14 @@ function run_test() {
         .then(() => promise_utils.exec(`echo access_key = ${CEPH_TEST.new_account_json.access_keys[0].access_key} >> ${CEPH_TEST.test_dir}${CEPH_TEST.ceph_config}`, false, true))
         .then(() => promise_utils.exec(`echo secret_key = ${CEPH_TEST.new_account_json.access_keys[0].secret_key} >> ${CEPH_TEST.test_dir}${CEPH_TEST.ceph_config}`, false, true))
         .then(() => system_ceph_test())
-        .catch(function(err) {
-            throw new Error('System Ceph Tests Failed:', err);
+        .catch(err => {
+            console.error('System Ceph Tests Failed:', err.stack || err);
+            throw err;
         })
         .then(() => s3_ceph_test())
-        .catch(function(err) {
-            throw new Error('Ceph Tests Failed:', err);
+        .catch(err => {
+            console.error('Ceph Tests Failed:', err.stack || err);
+            throw err;
         });
 }
 

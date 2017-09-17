@@ -126,6 +126,7 @@ module.exports = {
             ignoreComments: true,
             ignoreUrls: true,
             ignoreTemplateLiterals: true,
+            ignoreRegExpLiterals: true,
         }],
 
         // max file length is 300 by default, we accept longer files
@@ -225,8 +226,8 @@ module.exports = {
         // prefer not to define a variable that shadows an outer scope variable
         'no-shadow': 'error',
 
-        // warn on usage of sync functions like fs.readFileSync() etc.
-        'no-sync': 'warn',
+        // we allow usage of sync functions like fs.readFileSync() etc.
+        'no-sync': 'off',
 
         // allowing (x ? y : z) it's a discouraged form but everyone are used to it
         'no-ternary': 'off',

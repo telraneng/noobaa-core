@@ -1,14 +1,14 @@
-noobaa-core/deploy/NVA_build
+noobaa-core/src/deploy/NVA_build
 ===========
 
-###src/deploy/NVA_build Table of Contents:
+### src/deploy/NVA_build Table of Contents:
 
 * [Files](#Files) - List of files and short description.
-* [NVA_Build](#NVA_Build) - NooBaa Virtual Appliance building procedure.
+* [Server](#server) - NooBaa Virtual Appliance building procedure.
 * [UpgradePack_Build](#UpgradePack_Build) - Upgrade pack building procedure.
 
 
-* ###Files
+* ### Files
 
 - deploy_base.sh - The master script for the NVA image creation.
 - noobaa_supervisor.conf - Supervisord configuration for the NVA services (mongodb, webserver etc.)
@@ -18,14 +18,11 @@ noobaa-core/deploy/NVA_build
 - version_check.js - simple http request to the SaaS werbserver for version verification
 - mongo.repo - mongodb repo definitions
 - create_vm - Create the NVA machine using the VirtualBox CLI
-- build_release.js - Node script which runs on our EC2 building server.
-                     DEPRECATED & NOT COMPLETE.
-- build_package.sh - Shell script runs on our EC2 building server.
 - upgrade_wapper.sh - Comes with the upgrade package, contain pre and post execution
                       functions.
 
 
-* ###NVA_Build (NooBaa Virtual Appliance):
+* ### Server (NooBaa Virtual Appliance):
 
 - Build Procedure:
 -
@@ -49,9 +46,9 @@ noobaa-core/deploy/NVA_build
 
 - NVA description:
   Our NVA is a CentOS based machine running the following components: Web Server, STUN/TURN, REST, MongoDB.
-  It does not contain the entire repo, just the extracted package created by the gulp target package_build
-  (for example, the agent code is not there). It does contain all the files needed to run these services, the agent
-  distribution pack and the package.json for dependency installation.
+  It does not contain the entire repo, just the extracted package created by src/deploy/NVA_build/build_package.sh
+  It does contain all the files needed to run these services, the agent distribution pack and the package.json 
+  for dependency installation.
 
   The services are being run and monitored by the supervisord mechanism (look at /etc/noobaa_supervisor.conf for the definitions).
   A crontab job which runs one a day between 00:00 to 03:00 checks against the NooBaa SaaS web server if the current version
@@ -79,8 +76,7 @@ noobaa-core/deploy/NVA_build
 
   UPGRADE
 
-  1. gulp package_build --on_premise
-  2. scp src/deploy/NVA_build/ and build/public/noobaa-NVA.tar.gz to root@machine:/tmp
-  3. run on the target machine:
+  1. scp src/deploy/NVA_build/ and build/public/noobaa-NVA.tar.gz to root@machine:/tmp
+  2. run on the target machine:
 
-     ./src/deploy/NVA_BUILD/upgrade from_file /tmp/noobaa-NVA.tar.gz
+     ./src/deploy/NVA_build/upgrade from_file /tmp/noobaa-NVA.tar.gz

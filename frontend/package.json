@@ -2,7 +2,7 @@
   "name": "noobaa_management_console",
   "version": "0.4.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Copyright (C) 2016 NooBaa all rights reserved",
   "description": "NooBaa Management Console",
   "main": "gulpfile.js",
   "dependencies": {},
