@@ -1,5 +1,5 @@
 #!groovy​
-def branch = 'master'
+def branch = 'qa-upgrade-test'
 //dataset, account
 def noobaa_ip = '52.191.130.61'
 def values = noobaa_ip.tokenize('.')
@@ -87,68 +87,13 @@ node('jenkins-slave1-centos') {
     stage('Tests') {
       // Run the maven build
       parallel (
-          "dataset": {
-                echo 'Running delete dataset'
-                sh script: """
-                        export NVM_DIR=/usr/local/nvm
-                        . /opt/nvm/nvm.sh
-                        node $WORKSPACE/src/test/qa/delete_dataset.js --server '${noobaa_ip}'
-                """
-                echo 'Running some dataset!'
-                sh script: """
-                    export NVM_DIR=/usr/local/nvm
-                    . /opt/nvm/nvm.sh
-                    node $WORKSPACE/src/test/qa/dataset.js --server '${noobaa_ip}' --aging_timeout '${aging_time}' --dataset_size '${dataset_size}'
-                """
-          },
-          "machinekill": {
-            echo 'Killing some nodes!'
-            sh script: """
-                export NVM_DIR=/usr/local/nvm
-                . /opt/nvm/nvm.sh
-                sleep '${start_killing_time}'m
-                node $WORKSPACE/src/test/qa/machine_killer.js --service '${service}' --project '${resource}' --zone '${zone}' --prefix '${prefix}' --timeout \$((${aging_time}-${start_killing_time})) --min_machines '${min_machines}' --max_machines '${max_machines}'
-            """
-          },
-        //   "agents-matrix": {
-        //     echo 'Adding some agents!'
-        //     sh script: """
-        //         export NVM_DIR=/usr/local/nvm
-        //         . /opt/nvm/nvm.sh
-        //         node $WORKSPACE/src/test/qa/agents_matrix.js --azure_name '${azureName}' --server_ip '${serverName}' --resource '${agentsResource}' --vnet '${agentsVnet}' --storage '${agentsStorage}' --upgrade_pack \$fname
-        //     """
-        //   },
-          "system-configurations": {
-            echo 'Adding some system configurations!'
-            sh script: """
-                export NVM_DIR=/usr/local/nvm
-                . /opt/nvm/nvm.sh
-               node $WORKSPACE/src/test/qa/system_config.js --server_ip '${serverLocalIP}' --my_ip '${nodeLocalIP}' --external_server_ip '${severExternalIP}'
-            """
-          },
-          "account": {
-            echo 'Doing account tests!'
-            sh script: """
-                export NVM_DIR=/usr/local/nvm
-                . /opt/nvm/nvm.sh
-                node $WORKSPACE/src/test/qa/account_test.js --server_ip '${noobaa_ip}' --system_ip '${noobaa_ip}'
-            """
-          },
-        //   "upgrades": {
-        //     echo 'Doing some upgrades!'
-        //     sh script: """
-        //         export NVM_DIR=/usr/local/nvm
-        //         . /opt/nvm/nvm.sh
-        //         node $WORKSPACE/src/test/qa/upgrade_test.js
-        //     """
-        //   },
-          "cluster": {
-            echo 'Doing some clusterisation!'
+          "upgrades": {
+            echo 'Doing some upgrade!'
             sh script: """
                 export NVM_DIR=/usr/local/nvm
                 . /opt/nvm/nvm.sh
                 fname=\$(unzip -o /tmp/noobaa-NVA-latest.zip -d  /tmp/|grep "tar.gz"|awk '{ print \$2 }')
-                node $WORKSPACE/src/test/qa/cluster_test.js --servers 3 --upgrade_pack \$fname --timeout '${aging_time}' --storage '${clusterStorage}' --resource '${clusterResource}' --vnet '${clusterVnet}' --breakonerror
+                node $WORKSPACE/src/test/qa/upgrade_test.js --upgrade_pack \$fname
             """
           }
       )

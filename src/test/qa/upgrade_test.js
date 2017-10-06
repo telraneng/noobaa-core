@@ -32,7 +32,7 @@ const storage = argv.storage || 'qaupgradeserverdisk';
 
 const clientId = process.env.CLIENT_ID;
 const domain = process.env.DOMAIN;
-const secret = process.env.APPLICATION_SECRET;
+const secretApp = process.env.APPLICATION_SECRET;
 const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
 
 /*
@@ -158,7 +158,7 @@ let server = {
 };
 
 let failures_in_test;
-let azf = new AzureFunctions(clientId, domain, secret, subscriptionId, resourceGroup, location);
+let azf = new AzureFunctions(clientId, domain, secretApp, subscriptionId, resourceGroup, location);
 
 function saveErrorAndResume(message) {
     console.error(message);
