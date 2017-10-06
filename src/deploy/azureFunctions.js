@@ -630,6 +630,9 @@ class AzureFunctions {
             vmName + '_ext', callback));
     }
 
+    getBlobFile(container, file) {
+        return P.fromCallback(callback => blobSvc.getBlobToLocalFile(container, file, file, callback));
+    }
 
     createServer(serverName, vnet, storage) { // creates new noobaa server and returns it's secret
         const CONTAINER_NAME = 'staging-vhds';
