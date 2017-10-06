@@ -84,7 +84,7 @@ var noobaa_agent = {
 
 var basic_tar_uri = 'https://qaupgrade.blob.core.windows.net/tar-files/';
 var version_map_tar = {
-    '1.4.1': 'noobaa-NVA-1.4.1-e9ba76d.tar.gz', //azure ver: 14.6.17
+    //'1.4.1': 'noobaa-NVA-1.4.1-e9ba76d.tar.gz', //azure ver: 14.6.17
     '1.6.1': 'noobaa-NVA-1.6.1-d4a7fb7.tar.gz',
     '1.7.0': 'noobaa-NVA-1.7.0-72af55b.tar.gz',
     '1.9.4': 'noobaa-NVA-1.9.4-fc230d5.tar.gz',
@@ -207,7 +207,8 @@ return azf.authenticate()
     .then(() => cleanEnv())
     .then(() => createNewService())
     .then(() => P.each(version_map_tar, pack => {
-        upgradeService(azf.getBlobFile(version_map_tar[pack]));
+        let tar_file = azf.getBlobFile(basic_tar_uri, version_map_tar[pack]);
+        upgradeService(tar_file);
     }))
     .then(() => upgradeService(lastUpgradePack))
     .catch(err => {
