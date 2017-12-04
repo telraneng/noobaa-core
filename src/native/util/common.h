@@ -1,16 +1,21 @@
 /* Copyright (C) 2016 NooBaa */
 #pragma once
 
-#include <algorithm>
 #include <assert.h>
-#include <exception>
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <sstream>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+#include <algorithm>
+#include <exception>
+#include <functional>
+#include <iostream>
+#include <list>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "backtrace.h"
 
@@ -83,12 +88,12 @@ public:
     }
 };
 
-class StackCleaner
+class ON_RETURN
 {
 public:
-    StackCleaner(std::function<void()> func)
+    ON_RETURN(std::function<void()> func)
         : _func(func) {}
-    ~StackCleaner() { _func(); }
+    ~ON_RETURN() { _func(); }
 
 private:
     std::function<void()> _func;

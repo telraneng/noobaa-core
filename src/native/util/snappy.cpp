@@ -1,13 +1,17 @@
 /* Copyright (C) 2016 NooBaa */
 #include "snappy.h"
+
+#include <assert.h>
+
 #include "../third_party/snappy/snappy-sinksource.h"
 #include "../third_party/snappy/snappy.h"
-#include <assert.h>
 
 namespace noobaa
 {
 
-class BufsSource : public snappy::Source
+DBG_INIT(0);
+
+class Bufs_Source : public snappy::Source
 {
 public:
     struct NB_Bufs* bufs;
@@ -15,9 +19,9 @@ public:
     int offset;
     int pos;
 
-    BufsSource(struct NB_Bufs* input)
+    Bufs_Source(struct NB_Bufs* input)
         : bufs(input), index(0), offset(0), pos(0) {}
-    virtual ~BufsSource() {}
+    virtual ~Bufs_Source() {}
 
     virtual size_t
     Available() const
@@ -62,15 +66,15 @@ public:
     }
 };
 
-class BufsSink : public snappy::Sink
+class Bufs_Sink : public snappy::Sink
 {
 public:
     struct NB_Bufs* bufs;
     struct NB_Buf append;
 
-    BufsSink(struct NB_Bufs* output)
+    Bufs_Sink(struct NB_Bufs* output)
         : bufs(output) { nb_buf_init(&append); }
-    virtual ~BufsSink() { nb_buf_free(&append); }
+    virtual ~Bufs_Sink() { nb_buf_free(&append); }
 
     virtual char*
     GetAppendBuffer(size_t len, char* scratch)
@@ -131,35 +135,23 @@ public:
     }
 };
 
-#define DBG 0
-
 int
-nb_snappy_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
+nb_snappy_compress(struct NB_Bufs* bufs, std::list<std::string>& errors)
 {
     struct NB_Bufs out;
     nb_bufs_init(&out);
 
-    BufsSource source(bufs);
-    BufsSink sink(&out);
+    Bufs_Source source(bufs);
+    Bufs_Sink sink(&out);
 
     int compressed_len = (int)snappy::Compress(&source, &sink);
 
-#if DBG
-    printf(
-        "nb_snappy_compress: input %i [#%i] output %i [#%i]\n",
-        bufs->len,
-        bufs->count,
-        out.len,
-        out.count);
-#endif
+    DBG2("nb_snappy_compress: " << DVAL(bufs->len) << DVAL(bufs->count) << DVAL(out.len) << DVAL(out.count));
 
     if (out.len != compressed_len) {
-        nb_bufs_push_printf(
-            errors,
-            256,
-            "nb_snappy_compress: mismatch compressed len %i from output %i",
-            compressed_len,
-            out.len);
+        errors.push_back(
+            XSTR() << "nb_snappy_compress: mismatch compressed len " << compressed_len
+                   << " from output " << out.len);
         nb_bufs_free(&out);
         return -1;
     }
@@ -170,30 +162,23 @@ nb_snappy_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
 }
 
 int
-nb_snappy_uncompress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
+nb_snappy_uncompress(struct NB_Bufs* bufs, std::list<std::string>& errors)
 {
     struct NB_Bufs out;
     nb_bufs_init(&out);
 
-    BufsSource source(bufs);
-    BufsSink sink(&out);
+    Bufs_Source source(bufs);
+    Bufs_Sink sink(&out);
 
     bool snappy_uncompress_ok = snappy::Uncompress(&source, &sink);
 
     if (!snappy_uncompress_ok) {
-        nb_bufs_push_printf(errors, 256, "nb_snappy_uncompress: invalid data");
+        errors.push_back("nb_snappy_uncompress: invalid data");
         nb_bufs_free(&out);
         return -1;
     }
 
-#if DBG
-    printf(
-        "nb_snappy_uncompress: input %i [#%i] output %i [#%i]\n",
-        bufs->len,
-        bufs->count,
-        out.len,
-        out.count);
-#endif
+    DBG2("nb_snappy_uncompress: " << DVAL(bufs->len) << DVAL(bufs->count) << DVAL(out.len) << DVAL(out.count));
 
     nb_bufs_free(bufs);
     *bufs = out;

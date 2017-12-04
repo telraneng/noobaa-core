@@ -8,7 +8,7 @@ void b64_napi(Napi::Env env, Napi::Object exports);
 void ssl_napi(napi_env env, napi_value exports);
 void syslog_napi(Napi::Env env, Napi::Object exports);
 void splitter_napi(Napi::Env env, Napi::Object exports);
-void chunk_coder_napi(napi_env env, napi_value exports);
+void chunk_coder_napi(Napi::Env env, Napi::Object exports);
 
 Napi::Object
 nb_native_napi(Napi::Env env, Napi::Object exports)

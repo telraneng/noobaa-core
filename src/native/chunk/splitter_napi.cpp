@@ -60,7 +60,7 @@ public:
     virtual void OnOK()
     {
         auto result = _splitter_result(Env(), _splitter);
-        Callback().MakeCallback(Env().Global(), {Env().Null(), result});
+        Callback().MakeCallback(Env().Global(), { Env().Null(), result });
     }
 
 private:
@@ -94,10 +94,7 @@ _chunk_splitter(const Napi::CallbackInfo& info)
     }
     if (!info[2].IsFunction() && !info[2].IsUndefined()) {
         throw Napi::TypeError::New(
-            info.Env(),
-            "Argument 'callback' should be "
-            "Function or undefined "
-            "- " SPLITTER_JS_SIGNATURE);
+            info.Env(), "Argument 'callback' should be Function or undefined - " SPLITTER_JS_SIGNATURE);
     }
 
     if (!splitter) {
@@ -115,7 +112,13 @@ _chunk_splitter(const Napi::CallbackInfo& info)
 
     auto buffers = info[1].As<Napi::Array>();
 
-    if (info[2].IsUndefined()) {
+    if (info[2].IsFunction()) {
+        auto callback = info[2].As<Napi::Function>();
+        SplitterWorker* worker = new SplitterWorker(state, buffers, callback, splitter);
+        worker->Queue();
+        return info.Env().Undefined();
+
+    } else {
         const int buffers_len = buffers.Length();
         for (int i = 0; i < buffers_len; ++i) {
             Napi::Value buf_val = buffers[i];
@@ -127,12 +130,6 @@ _chunk_splitter(const Napi::CallbackInfo& info)
             splitter->push(buf.Data(), buf.Length());
         }
         return _splitter_result(info.Env(), splitter);
-
-    } else {
-        auto callback = info[2].As<Napi::Function>();
-        SplitterWorker* worker = new SplitterWorker(state, buffers, callback, splitter);
-        worker->Queue();
-        return info.Env().Undefined();
     }
 }
 

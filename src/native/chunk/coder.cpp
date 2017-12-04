@@ -2,15 +2,6 @@
 #include "coder.h"
 
 #include <assert.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
-#include <openssl/sha.h>
 
 #include "../third_party/cm256/cm256.h"
 #include "../third_party/isa-l/include/erasure_code.h"
@@ -31,21 +22,6 @@ namespace noobaa
 // our chunk digest is already covering for data integrity
 #define USE_GCM_AUTH_TAG false
 
-static void _nb_encode(struct NB_Coder_Chunk* chunk);
-static void _nb_encrypt(struct NB_Coder_Chunk* chunk, const EVP_CIPHER* evp_cipher);
-static void _nb_no_encrypt(struct NB_Coder_Chunk* chunk);
-static void _nb_erasure(struct NB_Coder_Chunk* chunk);
-
-static void _nb_decode(struct NB_Coder_Chunk* chunk);
-static void
-_nb_derasure(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, int total_frags);
-static void _nb_decrypt(
-    struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, const EVP_CIPHER* evp_cipher);
-static void _nb_no_decrypt(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map);
-
-static void _nb_digest(const EVP_MD* md, struct NB_Bufs* bufs, struct NB_Buf* digest);
-static bool _nb_digest_match(const EVP_MD* md, struct NB_Bufs* data, struct NB_Buf* digest);
-
 static inline int
 _nb_div_up(int n, int align)
 {
@@ -59,7 +35,7 @@ _nb_align_up(int n, int align)
 }
 
 void
-nb_chunk_coder_init()
+Chunk_Coder::init()
 {
     cm256_init();
 #ifndef WIN32
@@ -73,208 +49,132 @@ nb_chunk_coder_init()
 }
 
 void
-nb_chunk_init(struct NB_Coder_Chunk* chunk)
+Chunk_Coder::code()
 {
-    chunk->digest_type[0] = 0;
-    chunk->frag_digest_type[0] = 0;
-    chunk->compress_type[0] = 0;
-    chunk->cipher_type[0] = 0;
-    chunk->parity_type[0] = 0;
-
-    nb_bufs_init(&chunk->data);
-    nb_bufs_init(&chunk->errors);
-    nb_buf_init(&chunk->digest);
-    nb_buf_init(&chunk->cipher_key);
-    nb_buf_init(&chunk->cipher_auth_tag);
-
-    chunk->frags = 0;
-    chunk->coder = NB_Coder_Type::ENCODER;
-    chunk->size = 0;
-    chunk->compress_size = 0;
-    chunk->data_frags = 1;
-    chunk->parity_frags = 0;
-    chunk->lrc_group = 0;
-    chunk->lrc_frags = 0;
-    chunk->frags_count = 0;
-}
-
-void
-nb_chunk_free(struct NB_Coder_Chunk* chunk)
-{
-    nb_bufs_free(&chunk->data);
-    nb_bufs_free(&chunk->errors);
-    nb_buf_free(&chunk->digest);
-    nb_buf_free(&chunk->cipher_key);
-    nb_buf_free(&chunk->cipher_auth_tag);
-
-    if (chunk->frags) {
-        for (int i = 0; i < chunk->frags_count; ++i) {
-            struct NB_Coder_Frag* f = chunk->frags + i;
-            nb_frag_free(f);
-        }
-        nb_free(chunk->frags);
-    }
-}
-
-void
-nb_chunk_coder(struct NB_Coder_Chunk* chunk)
-{
-    if (chunk->errors.count) return;
-    switch (chunk->coder) {
-    case NB_Coder_Type::ENCODER:
-        _nb_encode(chunk);
+    if (has_errors()) return;
+    switch (_coder) {
+    case Coder_Type::ENCODER:
+        _encode();
         break;
-    case NB_Coder_Type::DECODER:
-        _nb_decode(chunk);
+    case Coder_Type::DECODER:
+        _decode();
         break;
     }
 }
 
 void
-nb_chunk_error(struct NB_Coder_Chunk* chunk, const char* fmt, ...)
-{
-    va_list va;
-    va_start(va, fmt);
-    nb_bufs_push_vprintf(&chunk->errors, 256, fmt, va);
-    va_end(va);
-}
-
-void
-nb_frag_init(struct NB_Coder_Frag* f)
-{
-    nb_bufs_init(&f->block);
-    nb_buf_init(&f->digest);
-    f->data_index = -1;
-    f->parity_index = -1;
-    f->lrc_index = -1;
-}
-
-void
-nb_frag_free(struct NB_Coder_Frag* f)
-{
-    nb_bufs_free(&f->block);
-    nb_buf_free(&f->digest);
-}
-
-static void
-_nb_encode(struct NB_Coder_Chunk* chunk)
+Chunk_Coder::_encode()
 {
     const EVP_MD* evp_md = 0;
     const EVP_MD* evp_md_frag = 0;
     const EVP_CIPHER* evp_cipher = 0;
 
-    if (chunk->digest_type[0]) {
-        evp_md = EVP_get_digestbyname(chunk->digest_type);
+    if (!_digest_type.empty()) {
+        evp_md = EVP_get_digestbyname(_digest_type.c_str());
         if (!evp_md) {
-            nb_chunk_error(chunk, "Chunk Encoder: unsupported digest type %s", chunk->digest_type);
+            add_error(XSTR() << "Chunk Encoder: unsupported digest type " << _digest_type);
             return;
         }
     }
 
-    if (chunk->frag_digest_type[0]) {
-        evp_md_frag = EVP_get_digestbyname(chunk->frag_digest_type);
+    if (!_frag_digest_type.empty()) {
+        evp_md_frag = EVP_get_digestbyname(_frag_digest_type.c_str());
         if (!evp_md_frag) {
-            nb_chunk_error(
-                chunk, "Chunk Encoder: unsupported frag digest type %s", chunk->frag_digest_type);
+            add_error(XSTR() << "Chunk Encoder: unsupported frag digest type " << _frag_digest_type);
             return;
         }
     }
 
-    if (chunk->cipher_type[0]) {
-        evp_cipher = EVP_get_cipherbyname(chunk->cipher_type);
+    if (!_cipher_type.empty()) {
+        evp_cipher = EVP_get_cipherbyname(_cipher_type.c_str());
         if (!evp_cipher) {
-            nb_chunk_error(chunk, "Chunk Encoder: unsupported cipher type %s", chunk->cipher_type);
+            add_error(XSTR() << "Chunk Encoder: unsupported cipher type " << _cipher_type);
             return;
         }
         const int cipher_block_size = EVP_CIPHER_block_size(evp_cipher);
         if (cipher_block_size != 1) {
-            nb_chunk_error(
-                chunk,
-                "Chunk Encoder: unsupported cipher type %s with block size %i",
-                chunk->cipher_type,
-                cipher_block_size);
+            add_error(
+                XSTR() << "Chunk Encoder: unsupported cipher type " << _cipher_type
+                       << " with block size " << cipher_block_size);
             return;
         }
     }
 
-    if (chunk->data.len != chunk->size) {
-        nb_chunk_error(
-            chunk,
-            "Chunk Encoder: chunk size mismatch %i data length %i",
-            chunk->size,
-            chunk->data.len);
+    if (_data.len != _size) {
+        add_error(
+            XSTR() << "Chunk Encoder: chunk size mismatch " << _size
+                   << " data length " << _data.len);
         return;
     }
 
     if (evp_md) {
-        _nb_digest(evp_md, &chunk->data, &chunk->digest);
+        _digest_calc(evp_md, &_data, &_digest);
     }
 
-    if (chunk->compress_type[0]) {
-        if (strcmp(chunk->compress_type, "snappy") == 0) {
-            if (nb_snappy_compress(&chunk->data, &chunk->errors)) return;
-        } else if (strcmp(chunk->compress_type, "zlib") == 0) {
-            if (nb_zlib_compress(&chunk->data, &chunk->errors)) return;
+    if (!_compress_type.empty()) {
+        if (_compress_type == "snappy") {
+            if (nb_snappy_compress(&_data, _errors)) return;
+        } else if (_compress_type == "zlib") {
+            if (nb_zlib_compress(&_data, _errors)) return;
         } else {
-            nb_chunk_error(
-                chunk, "Chunk Encoder: unsupported compress type %s", chunk->compress_type);
+            add_error(XSTR() << "Chunk Encoder: unsupported compress type " << _compress_type);
             return;
         }
-        chunk->compress_size = chunk->data.len;
+        _compress_size = _data.len;
     }
 
-    const int lrc_groups =
-        (chunk->lrc_group == 0) ? 0 : (chunk->data_frags + chunk->parity_frags) / chunk->lrc_group;
-    const int lrc_total_frags = lrc_groups * chunk->lrc_frags;
-    const int total_frags = chunk->data_frags + chunk->parity_frags + lrc_total_frags;
+    const int lrc_groups = (_lrc_group == 0)
+        ? 0
+        : (_data_frags + _parity_frags) / _lrc_group;
+    const int lrc_total_frags = lrc_groups * _lrc_frags;
+    const int total_frags = _data_frags + _parity_frags + lrc_total_frags;
 
     // align compressed_size up with zeros padding for data_frags
-    const int padded_size = _nb_align_up(chunk->data.len, chunk->data_frags);
-    assert(padded_size >= chunk->data.len);
-    if (padded_size > chunk->data.len) {
-        nb_bufs_push_zeros(&chunk->data, padded_size - chunk->data.len);
+    const int padded_size = _nb_align_up(_data.len, _data_frags);
+    assert(padded_size >= _data.len);
+    if (padded_size > _data.len) {
+        nb_bufs_push_zeros(&_data, padded_size - _data.len);
     }
 
     // init frags
-    chunk->frag_size = chunk->data.len / chunk->data_frags;
-    chunk->frags_count = total_frags;
-    chunk->frags = nb_new_arr(total_frags, struct NB_Coder_Frag);
-    for (int i = 0; i < chunk->frags_count; ++i) {
-        struct NB_Coder_Frag* f = chunk->frags + i;
-        nb_frag_init(f);
-        if (i < chunk->data_frags) {
+    _frag_size = _data.len / _data_frags;
+    _frags_count = total_frags;
+    _frags = new Frag[total_frags];
+    for (int i = 0; i < _frags_count; ++i) {
+        Frag* f = _frags + i;
+        if (i < _data_frags) {
             f->data_index = i;
-        } else if (i < chunk->data_frags + chunk->parity_frags) {
-            f->parity_index = i - chunk->data_frags;
+        } else if (i < _data_frags + _parity_frags) {
+            f->parity_index = i - _data_frags;
         } else {
-            f->lrc_index = i - chunk->data_frags - chunk->parity_frags;
+            f->lrc_index = i - _data_frags - _parity_frags;
         }
     }
 
     if (evp_cipher) {
-        _nb_encrypt(chunk, evp_cipher);
+        _encrypt(evp_cipher);
     } else {
-        _nb_no_encrypt(chunk);
+        _no_encrypt();
     }
 
-    if (chunk->errors.count) return;
+    if (has_errors()) return;
 
-    if (chunk->parity_type[0]) {
-        _nb_erasure(chunk);
+    if (!_parity_type.empty()) {
+        _erasure();
     }
 
-    if (chunk->errors.count) return;
+    if (has_errors()) return;
 
     if (evp_md_frag) {
-        for (int i = 0; i < chunk->frags_count; ++i) {
-            struct NB_Coder_Frag* f = chunk->frags + i;
-            _nb_digest(evp_md_frag, &f->block, &f->digest);
+        for (int i = 0; i < _frags_count; ++i) {
+            Frag* f = _frags + i;
+            _digest_calc(evp_md_frag, &f->block, &f->digest);
         }
     }
 }
 
-static void
-_nb_encrypt(struct NB_Coder_Chunk* chunk, const EVP_CIPHER* evp_cipher)
+void
+Chunk_Coder::_encrypt(const EVP_CIPHER* evp_cipher)
 {
     EVP_CIPHER_CTX ctx;
     struct NB_Buf iv;
@@ -287,51 +187,51 @@ _nb_encrypt(struct NB_Coder_Chunk* chunk, const EVP_CIPHER* evp_cipher)
     const int iv_len = EVP_CIPHER_iv_length(evp_cipher);
     nb_buf_init_zeros(&iv, iv_len);
 
-    if (chunk->cipher_key.len) {
-        assert(chunk->cipher_key.len == key_len);
+    if (_cipher_key.len) {
+        assert(_cipher_key.len == key_len);
     } else {
-        nb_buf_free(&chunk->cipher_key);
-        nb_buf_init_alloc(&chunk->cipher_key, key_len);
-        RAND_bytes(chunk->cipher_key.data, chunk->cipher_key.len);
+        nb_buf_free(&_cipher_key);
+        nb_buf_init_alloc(&_cipher_key, key_len);
+        RAND_bytes(_cipher_key.data, _cipher_key.len);
     }
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         EVP_CIPHER_CTX_cleanup(&ctx);
         nb_buf_free(&iv);
     });
 
-    evp_ret = EVP_EncryptInit_ex(&ctx, evp_cipher, NULL, chunk->cipher_key.data, iv.data);
+    evp_ret = EVP_EncryptInit_ex(&ctx, evp_cipher, NULL, _cipher_key.data, iv.data);
     if (!evp_ret) {
-        nb_chunk_error(chunk, "Chunk Encoder: cipher encrypt init failed %s", chunk->cipher_type);
+        add_error(XSTR() << "Chunk Encoder: cipher encrypt init failed " << _cipher_type);
         return;
     }
 
     // allocate blocks for all data frags
-    for (int i = 0; i < chunk->data_frags; ++i) {
-        struct NB_Coder_Frag* f = chunk->frags + i;
-        nb_bufs_push_alloc(&f->block, chunk->frag_size);
+    for (int i = 0; i < _data_frags; ++i) {
+        Frag* f = _frags + i;
+        nb_bufs_push_alloc(&f->block, _frag_size);
     }
 
     int frag_pos = 0;
-    struct NB_Coder_Frag* f = chunk->frags;
+    Frag* f = _frags;
 
-    for (int i = 0; i < chunk->data.count; ++i) {
-        struct NB_Buf* b = nb_bufs_get(&chunk->data, i);
+    for (int i = 0; i < _data.count; ++i) {
+        struct NB_Buf* b = nb_bufs_get(&_data, i);
 
         for (int pos = 0; pos < b->len;) {
 
-            if (f >= chunk->frags + chunk->data_frags) {
+            if (f >= _frags + _data_frags) {
                 assert(!"data frags exceeded");
-                nb_chunk_error(chunk, "Chunk Encoder: data frags exceeded");
+                add_error("Chunk Encoder: data frags exceeded");
                 return;
             }
 
             struct NB_Buf* fb = nb_bufs_get(&f->block, 0);
-            assert(fb && fb->len == chunk->frag_size);
+            assert(fb && fb->len == _frag_size);
 
             if (frag_pos > fb->len) {
                 assert(!"block len exceeded");
-                nb_chunk_error(chunk, "Chunk Encoder: block len exceeded");
+                add_error("Chunk Encoder: block len exceeded");
                 return;
             }
 
@@ -348,8 +248,7 @@ _nb_encrypt(struct NB_Coder_Chunk* chunk, const EVP_CIPHER* evp_cipher)
             int out_len = 0;
             evp_ret = EVP_EncryptUpdate(&ctx, fb->data + frag_pos, &out_len, b->data + pos, len);
             if (!evp_ret) {
-                nb_chunk_error(
-                    chunk, "Chunk Encoder: cipher encrypt update failed %s", chunk->cipher_type);
+                add_error(XSTR() << "Chunk Encoder: cipher encrypt update failed " << _cipher_type);
                 return;
             }
 
@@ -358,72 +257,69 @@ _nb_encrypt(struct NB_Coder_Chunk* chunk, const EVP_CIPHER* evp_cipher)
         }
     }
 
-    if (f + 1 != chunk->frags + chunk->data_frags) {
+    if (f + 1 != _frags + _data_frags) {
         assert(!"data frags incomplete");
-        nb_chunk_error(chunk, "Chunk Encoder: data frags incomplete");
+        add_error("Chunk Encoder: data frags incomplete");
         return;
     }
 
-    if (frag_pos != chunk->frag_size) {
+    if (frag_pos != _frag_size) {
         assert(!"block len incomplete");
-        nb_chunk_error(
-            chunk,
-            "Chunk Encoder: block len incomplete %i != %i %s",
-            frag_pos,
-            chunk->frag_size,
-            chunk->cipher_type);
+        add_error(
+            XSTR() << "Chunk Encoder: block len incomplete "
+                   << frag_pos << " != " << _frag_size
+                   << " cipher " << _cipher_type);
         return;
     }
 
     int out_len = 0;
     evp_ret = EVP_EncryptFinal_ex(&ctx, 0, &out_len);
     if (!evp_ret) {
-        nb_chunk_error(chunk, "Chunk Encoder: cipher encrypt final failed %s", chunk->cipher_type);
+        add_error(XSTR() << "Chunk Encoder: cipher encrypt final failed " << _cipher_type);
         return;
     }
     assert(!out_len);
 
     if (USE_GCM_AUTH_TAG && EVP_CIPHER_CTX_mode(&ctx) == EVP_CIPH_GCM_MODE) {
-        nb_buf_free(&chunk->cipher_auth_tag);
-        nb_buf_init_alloc(&chunk->cipher_auth_tag, 16);
+        nb_buf_free(&_cipher_auth_tag);
+        nb_buf_init_alloc(&_cipher_auth_tag, 16);
         evp_ret = EVP_CIPHER_CTX_ctrl(
-            &ctx, EVP_CTRL_GCM_GET_TAG, chunk->cipher_auth_tag.len, chunk->cipher_auth_tag.data);
+            &ctx, EVP_CTRL_GCM_GET_TAG, _cipher_auth_tag.len, _cipher_auth_tag.data);
         if (!evp_ret) {
-            nb_chunk_error(
-                chunk, "Chunk Encoder: cipher encrypt get tag failed %s", chunk->cipher_type);
+            add_error(XSTR() << "Chunk Encoder: cipher encrypt get tag failed " << _cipher_type);
             return;
         }
     }
 }
 
-static void
-_nb_no_encrypt(struct NB_Coder_Chunk* chunk)
+void
+Chunk_Coder::_no_encrypt()
 {
-    struct NB_Coder_Frag* f = chunk->frags;
+    Frag* f = _frags;
 
-    for (int i = 0; i < chunk->data.count; ++i) {
-        struct NB_Buf* b = nb_bufs_get(&chunk->data, i);
+    for (int i = 0; i < _data.count; ++i) {
+        struct NB_Buf* b = nb_bufs_get(&_data, i);
 
         for (int pos = 0; pos < b->len;) {
 
-            if (f >= chunk->frags + chunk->data_frags) {
+            if (f >= _frags + _data_frags) {
                 assert(!"data frags exceeded");
-                nb_chunk_error(chunk, "Chunk Encoder: data frags exceeded");
+                add_error("Chunk Encoder: data frags exceeded");
                 return;
             }
 
-            if (f->block.len > chunk->frag_size) {
+            if (f->block.len > _frag_size) {
                 assert(!"block len exceeded");
-                nb_chunk_error(chunk, "Chunk Encoder: block len exceeded");
+                add_error("Chunk Encoder: block len exceeded");
                 return;
             }
 
-            if (f->block.len == chunk->frag_size) {
+            if (f->block.len == _frag_size) {
                 f++;
                 continue; // in order to recheck the conditions
             }
 
-            const int needed = chunk->frag_size - f->block.len;
+            const int needed = _frag_size - f->block.len;
             const int avail = b->len - pos;
             const int len = avail < needed ? avail : needed;
 
@@ -432,236 +328,218 @@ _nb_no_encrypt(struct NB_Coder_Chunk* chunk)
         }
     }
 
-    if (f + 1 != chunk->frags + chunk->data_frags) {
+    if (f + 1 != _frags + _data_frags) {
         assert(!"data frags incomplete");
-        nb_chunk_error(chunk, "Chunk Encoder: data frags incomplete");
+        add_error("Chunk Encoder: data frags incomplete");
         return;
     }
 
-    if (f->block.len != chunk->frag_size) {
+    if (f->block.len != _frag_size) {
         assert(!"block len incomplete");
-        nb_chunk_error(
-            chunk,
-            "Chunk Encoder: block len incomplete %i != %i %s",
-            f->block.len,
-            chunk->frag_size,
-            chunk->cipher_type);
+        add_error(
+            XSTR() << "Chunk Encoder: block len incomplete "
+                   << f->block.len << " != " << _frag_size
+                   << " cipher " << _cipher_type);
         return;
     }
 }
 
-static void
-_nb_erasure(struct NB_Coder_Chunk* chunk)
+void
+Chunk_Coder::_erasure()
 {
     struct NB_Buf parity_buf;
 
-    NB_Parity_Type parity_type;
-    if (strcmp(chunk->parity_type, "isa-c1") == 0) {
-        parity_type = NB_Parity_Type::C1;
-    } else if (strcmp(chunk->parity_type, "isa-rs") == 0) {
-        parity_type = NB_Parity_Type::RS;
-    } else if (strcmp(chunk->parity_type, "cm256") == 0) {
-        parity_type = NB_Parity_Type::CM;
+    Parity_Type parity_type;
+    if (_parity_type == "isa-c1") {
+        parity_type = Parity_Type::C1;
+    } else if (_parity_type == "isa-rs") {
+        parity_type = Parity_Type::RS;
+    } else if (_parity_type == "cm256") {
+        parity_type = Parity_Type::CM;
     } else {
-        parity_type = NB_Parity_Type::NONE;
+        parity_type = Parity_Type::NONE;
     }
 
-    if (parity_type == NB_Parity_Type::NONE || chunk->parity_frags <= 0) return;
+    if (parity_type == Parity_Type::NONE || _parity_frags <= 0) return;
 
-    if (chunk->data_frags > MAX_DATA_FRAGS || chunk->parity_frags > MAX_PARITY_FRAGS) {
-        nb_chunk_error(
-            chunk,
-            "Chunk Encoder: erasure code above hardcoded limits"
-            " data_frags %i"
-            " MAX_DATA_FRAGS %i"
-            " parity_frags %i"
-            " MAX_PARITY_FRAGS %i",
-            chunk->data_frags,
-            MAX_DATA_FRAGS,
-            chunk->parity_frags,
-            MAX_PARITY_FRAGS);
+    if (_data_frags > MAX_DATA_FRAGS || _parity_frags > MAX_PARITY_FRAGS) {
+        add_error(
+            XSTR() << "Chunk Encoder: erasure code above hardcoded limits"
+                   << " data_frags " << _data_frags
+                   << " MAX_DATA_FRAGS " << MAX_DATA_FRAGS
+                   << " parity_frags " << _parity_frags
+                   << " MAX_PARITY_FRAGS " << MAX_PARITY_FRAGS);
         return;
     }
 
     // allocate a single buffer for all the parity blocks
     // the first parity fragment will become the owner of the entire allocation
     // and the rest will share it
-    nb_buf_init_alloc(&parity_buf, chunk->parity_frags * chunk->frag_size);
-    for (int i = 0; i < chunk->parity_frags; ++i) {
-        struct NB_Coder_Frag* f = chunk->frags + chunk->data_frags + i;
+    nb_buf_init_alloc(&parity_buf, _parity_frags * _frag_size);
+    for (int i = 0; i < _parity_frags; ++i) {
+        Frag* f = _frags + _data_frags + i;
         if (i == 0) {
-            nb_bufs_push_owned(&f->block, parity_buf.data, chunk->frag_size);
+            nb_bufs_push_owned(&f->block, parity_buf.data, _frag_size);
         } else {
             nb_bufs_push_shared(
-                &f->block, parity_buf.data + (i * chunk->frag_size), chunk->frag_size);
+                &f->block, parity_buf.data + (i * _frag_size), _frag_size);
         }
     }
 
-    if (parity_type == NB_Parity_Type::C1 || parity_type == NB_Parity_Type::RS) {
+    if (parity_type == Parity_Type::C1 || parity_type == Parity_Type::RS) {
         uint8_t ec_matrix_encode[MAX_MATRIX_SIZE];
         uint8_t ec_table[MAX_MATRIX_SIZE * 32];
         uint8_t* ec_blocks[MAX_TOTAL_FRAGS];
-        const int k = chunk->data_frags;
-        const int m = chunk->data_frags + chunk->parity_frags;
+        const int k = _data_frags;
+        const int m = _data_frags + _parity_frags;
         for (int i = 0; i < m; ++i) {
-            struct NB_Coder_Frag* f = chunk->frags + i;
+            Frag* f = _frags + i;
             ec_blocks[i] = nb_bufs_merge(&f->block, 0);
         }
-        if (parity_type == NB_Parity_Type::C1) {
+        if (parity_type == Parity_Type::C1) {
             gf_gen_cauchy1_matrix(ec_matrix_encode, m, k);
         } else {
             gf_gen_rs_matrix(ec_matrix_encode, m, k);
         }
         ec_init_tables(k, m - k, &ec_matrix_encode[k * k], ec_table);
-        ec_encode_data(chunk->frag_size, k, m - k, ec_table, ec_blocks, &ec_blocks[k]);
-    } else if (parity_type == NB_Parity_Type::CM) {
+        ec_encode_data(_frag_size, k, m - k, ec_table, ec_blocks, &ec_blocks[k]);
+    } else if (parity_type == Parity_Type::CM) {
         cm256_encoder_params cm_params;
         cm256_block cm_blocks[MAX_DATA_FRAGS];
-        cm_params.BlockBytes = chunk->frag_size;
-        cm_params.OriginalCount = chunk->data_frags;
-        cm_params.RecoveryCount = chunk->parity_frags;
-        for (int i = 0; i < chunk->data_frags; ++i) {
-            struct NB_Coder_Frag* f = chunk->frags + i;
+        cm_params.BlockBytes = _frag_size;
+        cm_params.OriginalCount = _data_frags;
+        cm_params.RecoveryCount = _parity_frags;
+        for (int i = 0; i < _data_frags; ++i) {
+            Frag* f = _frags + i;
             cm_blocks[i].Index = i;
             cm_blocks[i].Block = nb_bufs_merge(&f->block, 0);
         }
         int encode_err = cm256_encode(cm_params, cm_blocks, parity_buf.data);
         if (encode_err) {
-            nb_chunk_error(
-                chunk,
-                "Chunk Encoder: erasure encode failed %i"
-                " frags_count %i"
-                " frag_size %i"
-                " data_frags %i"
-                " parity_frags %i",
-                encode_err,
-                chunk->frags_count,
-                chunk->frag_size,
-                chunk->data_frags,
-                chunk->parity_frags);
+            add_error(
+                XSTR() << "Chunk Encoder: erasure encode failed " << encode_err
+                       << " frags_count " << _frags_count
+                       << " frag_size " << _frag_size
+                       << " data_frags " << _data_frags
+                       << " parity_frags " << _parity_frags);
             return;
         }
     }
 }
 
-static void
-_nb_decode(struct NB_Coder_Chunk* chunk)
+void
+Chunk_Coder::_decode()
 {
     const EVP_MD* evp_md = 0;
     const EVP_MD* evp_md_frag = 0;
     const EVP_CIPHER* evp_cipher = 0;
-    struct NB_Coder_Frag** frags_map = 0;
+    Frag** frags_map = 0;
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         if (frags_map) nb_free(frags_map);
     });
 
-    if (chunk->digest_type[0]) {
-        evp_md = EVP_get_digestbyname(chunk->digest_type);
+    if (!_digest_type.empty()) {
+        evp_md = EVP_get_digestbyname(_digest_type.c_str());
         if (!evp_md) {
-            nb_chunk_error(chunk, "Chunk Decoder: unsupported digest type %s", chunk->digest_type);
+            add_error(XSTR() << "Chunk Decoder: unsupported digest type " << _digest_type);
             return;
         }
     }
 
-    if (chunk->frag_digest_type[0]) {
-        evp_md_frag = EVP_get_digestbyname(chunk->frag_digest_type);
+    if (!_frag_digest_type.empty()) {
+        evp_md_frag = EVP_get_digestbyname(_frag_digest_type.c_str());
         if (!evp_md_frag) {
-            nb_chunk_error(
-                chunk, "Chunk Decoder: unsupported frag digest type %s", chunk->frag_digest_type);
+            add_error(XSTR() << "Chunk Decoder: unsupported frag digest type " << _frag_digest_type);
             return;
         }
     }
 
-    if (chunk->cipher_type[0]) {
-        evp_cipher = EVP_get_cipherbyname(chunk->cipher_type);
+    if (!_cipher_type.empty()) {
+        evp_cipher = EVP_get_cipherbyname(_cipher_type.c_str());
         if (!evp_cipher) {
-            nb_chunk_error(chunk, "Chunk Decoder: unsupported cipher type %s", chunk->cipher_type);
+            add_error(XSTR() << "Chunk Decoder: unsupported cipher type " << _cipher_type);
             return;
         }
         const int cipher_block_size = EVP_CIPHER_block_size(evp_cipher);
         if (cipher_block_size != 1) {
-            nb_chunk_error(
-                chunk,
-                "Chunk Decoder: unsupported cipher type %s with block size %i",
-                chunk->cipher_type,
-                cipher_block_size);
+            add_error(
+                XSTR() << "Chunk Decoder: unsupported cipher type " << _cipher_type
+                       << " with block size " << cipher_block_size);
             return;
         }
     }
 
-    if (chunk->frags_count < chunk->data_frags) {
-        nb_chunk_error(chunk, "Chunk Decoder: missing data frags");
+    if (_frags_count < _data_frags) {
+        add_error("Chunk Decoder: missing data frags");
         return;
     }
 
     const int lrc_groups =
-        (chunk->lrc_group == 0) ? 0 : (chunk->data_frags + chunk->parity_frags) / chunk->lrc_group;
-    const int lrc_total_frags = lrc_groups * chunk->lrc_frags;
-    const int total_frags = chunk->data_frags + chunk->parity_frags + lrc_total_frags;
-    const int decrypted_size = chunk->compress_size > 0 ? chunk->compress_size : chunk->size;
-    const int padded_size = _nb_align_up(decrypted_size, chunk->data_frags);
+        (_lrc_group == 0) ? 0 : (_data_frags + _parity_frags) / _lrc_group;
+    const int lrc_total_frags = lrc_groups * _lrc_frags;
+    const int total_frags = _data_frags + _parity_frags + lrc_total_frags;
+    const int decrypted_size = _compress_size > 0 ? _compress_size : _size;
+    const int padded_size = _nb_align_up(decrypted_size, _data_frags);
 
-    if (chunk->frag_size != padded_size / chunk->data_frags) {
-        nb_chunk_error(chunk, "Chunk Decoder: mismatch frag size");
+    if (_frag_size != padded_size / _data_frags) {
+        add_error("Chunk Decoder: mismatch frag size");
         return;
     }
 
-    frags_map = nb_new_arr(total_frags, struct NB_Coder_Frag*);
+    frags_map = new Frag*[total_frags];
 
-    _nb_derasure(chunk, frags_map, total_frags);
+    _derasure(frags_map, total_frags);
 
-    if (chunk->errors.count) return;
+    if (has_errors()) return;
 
     if (evp_cipher) {
-        _nb_decrypt(chunk, frags_map, evp_cipher);
+        _decrypt(frags_map, evp_cipher);
     } else {
-        _nb_no_decrypt(chunk, frags_map);
+        _no_decrypt(frags_map);
     }
 
-    if (chunk->errors.count) return;
+    if (has_errors()) return;
 
-    if (chunk->data.len < decrypted_size || chunk->data.len > padded_size) {
-        nb_chunk_error(
-            chunk,
-            "Chunk Decoder: size mismatch %i data length %i",
-            decrypted_size,
-            chunk->data.len);
+    if (_data.len < decrypted_size || _data.len > padded_size) {
+        add_error(
+            XSTR() << "Chunk Decoder: size mismatch " << decrypted_size
+                   << " data length " << _data.len);
         return;
     }
 
-    nb_bufs_truncate(&chunk->data, decrypted_size);
+    nb_bufs_truncate(&_data, decrypted_size);
 
-    if (chunk->compress_type[0]) {
-        if (strcmp(chunk->compress_type, "snappy") == 0) {
-            nb_snappy_uncompress(&chunk->data, &chunk->errors);
-        } else if (strcmp(chunk->compress_type, "zlib") == 0) {
-            nb_zlib_uncompress(&chunk->data, chunk->size, &chunk->errors);
+    if (!_compress_type.empty()) {
+        if (_compress_type == "snappy") {
+            nb_snappy_uncompress(&_data, _errors);
+        } else if (_compress_type == "zlib") {
+            nb_zlib_uncompress(&_data, _size, _errors);
         } else {
-            nb_chunk_error(
-                chunk, "Chunk Decoder: unsupported compress type %s", chunk->compress_type);
+            add_error(XSTR() << "Chunk Decoder: unsupported compress type " << _compress_type);
         }
-        if (chunk->errors.count) return;
+        if (has_errors()) return;
     }
 
     // check that chunk size matches the size used when encoding
-    if (chunk->data.len != chunk->size) {
-        nb_chunk_error(
-            chunk, "Chunk Decoder: size mismatch %i data length %i", chunk->size, chunk->data.len);
+    if (_data.len != _size) {
+        add_error(
+            XSTR() << "Chunk Decoder: size mismatch " << _size
+                   << " data length " << _data.len);
         return;
     }
 
     // check that chunk data digest matches the digest computed during encoding
     if (evp_md) {
-        if (!_nb_digest_match(evp_md, &chunk->data, &chunk->digest)) {
-            nb_chunk_error(chunk, "Chunk Decoder: chunk digest mismatch %s", chunk->digest_type);
+        if (!_digest_match(evp_md, &_data, &_digest)) {
+            add_error(XSTR() << "Chunk Decoder: chunk digest mismatch " << _digest_type);
         }
     }
 }
 
 static void
-_nb_ec_select_available_fragments(
-    struct NB_Coder_Frag** frags_map,
+_ec_select_available_fragments(
+    Chunk_Coder::Frag** frags_map,
     int k,
     int m,
     uint8_t* a,
@@ -689,8 +567,13 @@ _nb_ec_select_available_fragments(
 }
 
 static void
-_nb_ec_update_decoded_fragments(
-    struct NB_Coder_Frag** frags_map, int k, int m, int out_len, uint8_t** out_bufs, int frag_size)
+_ec_update_decoded_fragments(
+    Chunk_Coder::Frag** frags_map,
+    int k,
+    int m,
+    int out_len,
+    uint8_t** out_bufs,
+    int frag_size)
 {
     // replace parity fragments with the decoded data fragments
     for (int i = 0, j = 0, r = k; i < out_len; ++i, ++j, ++r) {
@@ -704,7 +587,7 @@ _nb_ec_update_decoded_fragments(
             ++r;
             assert(r >= k && r < m);
         }
-        struct NB_Coder_Frag* f = frags_map[r];
+        Chunk_Coder::Frag* f = frags_map[r];
         f->data_index = j;
         nb_bufs_free(&f->block);
         nb_bufs_init(&f->block);
@@ -714,52 +597,51 @@ _nb_ec_update_decoded_fragments(
     }
 }
 
-static void
-_nb_derasure(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, int total_frags)
+void
+Chunk_Coder::_derasure(Chunk_Coder::Frag** frags_map, int total_frags)
 {
     const EVP_MD* evp_md_frag = 0;
     int num_avail_data_frags = 0;
     int num_avail_parity_frags = 0;
 
-    NB_Parity_Type parity_type;
-    if (strcmp(chunk->parity_type, "isa-c1") == 0) {
-        parity_type = NB_Parity_Type::C1;
-    } else if (strcmp(chunk->parity_type, "isa-rs") == 0) {
-        parity_type = NB_Parity_Type::RS;
-    } else if (strcmp(chunk->parity_type, "cm256") == 0) {
-        parity_type = NB_Parity_Type::CM;
+    Parity_Type parity_type;
+    if (_parity_type == "isa-c1") {
+        parity_type = Parity_Type::C1;
+    } else if (_parity_type == "isa-rs") {
+        parity_type = Parity_Type::RS;
+    } else if (_parity_type == "cm256") {
+        parity_type = Parity_Type::CM;
     } else {
-        parity_type = NB_Parity_Type::NONE;
+        parity_type = Parity_Type::NONE;
     }
 
-    if (chunk->frag_digest_type[0]) {
-        evp_md_frag = EVP_get_digestbyname(chunk->frag_digest_type);
+    if (!_frag_digest_type.empty()) {
+        evp_md_frag = EVP_get_digestbyname(_frag_digest_type.c_str());
     }
 
     for (int i = 0; i < total_frags; ++i) {
         frags_map[i] = 0;
     }
 
-    for (int i = 0; i < chunk->frags_count; ++i) {
-        struct NB_Coder_Frag* f = chunk->frags + i;
+    for (int i = 0; i < _frags_count; ++i) {
+        Frag* f = _frags + i;
         int index = -1;
-        if (f->data_index >= 0 && f->data_index < chunk->data_frags) {
+        if (f->data_index >= 0 && f->data_index < _data_frags) {
             index = f->data_index;
-        } else if (f->parity_index >= 0 && f->parity_index < chunk->parity_frags) {
-            index = chunk->data_frags + f->parity_index;
-        } else if (f->lrc_index >= 0 && f->lrc_index < total_frags - chunk->data_frags - chunk->parity_frags) {
+        } else if (f->parity_index >= 0 && f->parity_index < _parity_frags) {
+            index = _data_frags + f->parity_index;
+        } else if (f->lrc_index >= 0 && f->lrc_index < total_frags - _data_frags - _parity_frags) {
             continue; // lrc not yet applicable
         } else {
             continue; // invalid chunk index
         }
-        if (f->block.len != chunk->frag_size) {
+        if (f->block.len != _frag_size) {
             if (f->block.len) {
-                printf(
-                    "CODER MISMATCHING BLOCK SIZE i=%i index=%i block_size=%i frag_size=%i\n",
-                    i,
-                    index,
-                    f->block.len,
-                    chunk->frag_size);
+                std::cout << "Chunk Decoder: Frag size mismatch "
+                        << f->block.len << " != " << _frag_size
+                        << " at " << i
+                        << " index " << index
+                        << std::endl;
             }
             continue; // mismatching block size
         }
@@ -767,34 +649,34 @@ _nb_derasure(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, int
             continue; // duplicate frag
         }
         if (evp_md_frag) {
-            if (!_nb_digest_match(evp_md_frag, &f->block, &f->digest)) {
+            if (!_digest_match(evp_md_frag, &f->block, &f->digest)) {
                 continue; // mismatching block digest
             }
         }
         frags_map[index] = f;
-        if (index < chunk->data_frags) {
+        if (index < _data_frags) {
             num_avail_data_frags++;
         } else {
             num_avail_parity_frags++;
         }
     }
 
-    assert(num_avail_data_frags <= chunk->data_frags);
+    assert(num_avail_data_frags <= _data_frags);
 
-    if (num_avail_data_frags < chunk->data_frags) {
+    if (num_avail_data_frags < _data_frags) {
 
-        if (chunk->parity_frags <= 0) {
-            nb_chunk_error(chunk, "Chunk Decoder: missing data frags and no parity");
+        if (_parity_frags <= 0) {
+            add_error("Chunk Decoder: missing data frags and no parity");
             return;
         }
-        if (num_avail_data_frags + num_avail_parity_frags < chunk->data_frags) {
-            nb_chunk_error(chunk, "Chunk Decoder: missing data frags and not enough parity");
+        if (num_avail_data_frags + num_avail_parity_frags < _data_frags) {
+            add_error("Chunk Decoder: missing data frags and not enough parity");
             return;
         }
 
-        if (parity_type == NB_Parity_Type::C1 || parity_type == NB_Parity_Type::RS) {
-            const int k = chunk->data_frags;
-            const int m = chunk->data_frags + chunk->parity_frags;
+        if (parity_type == Parity_Type::C1 || parity_type == Parity_Type::RS) {
+            const int k = _data_frags;
+            const int m = _data_frags + _parity_frags;
             uint8_t ec_table[MAX_MATRIX_SIZE * 32];
             uint8_t a[MAX_MATRIX_SIZE];
             uint8_t b[MAX_MATRIX_SIZE];
@@ -803,44 +685,39 @@ _nb_derasure(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, int
             uint8_t out_index[MAX_PARITY_FRAGS];
             int out_len = 0;
             // calculate the decode matrix:
-            if (parity_type == NB_Parity_Type::C1) {
+            if (parity_type == Parity_Type::C1) {
                 gf_gen_cauchy1_matrix(a, m, k);
             } else {
                 gf_gen_rs_matrix(a, m, k);
             }
-            _nb_ec_select_available_fragments(frags_map, k, m, a, b, out_index, &out_len, in_bufs);
-            assert(out_len == chunk->data_frags - num_avail_data_frags);
+            _ec_select_available_fragments(frags_map, k, m, a, b, out_index, &out_len, in_bufs);
+            assert(out_len == _data_frags - num_avail_data_frags);
             if (gf_invert_matrix(b, a, k) < 0) {
-                nb_chunk_error(
-                    chunk,
-                    "Chunk Decoder: erasure decode invert failed"
-                    " data_frags %i/%i"
-                    " parity_frags %i/%i",
-                    num_avail_data_frags,
-                    chunk->data_frags,
-                    num_avail_parity_frags,
-                    chunk->parity_frags);
+                add_error(
+                    XSTR() << "Chunk Decoder: erasure decode invert failed"
+                           << " data_frags " << num_avail_data_frags << "/" << _data_frags
+                           << " parity_frags " << num_avail_parity_frags << "/" << _parity_frags);
                 return;
             }
             // select rows of missing data fragments
             for (int i = 0; i < out_len; ++i) {
                 memcpy(&b[k * i], &a[k * out_index[i]], k);
-                out_bufs[i] = nb_new_mem(chunk->frag_size);
+                out_bufs[i] = nb_new_mem(_frag_size);
             }
             ec_init_tables(k, out_len, b, ec_table);
-            ec_encode_data(chunk->frag_size, k, out_len, ec_table, in_bufs, out_bufs);
-            _nb_ec_update_decoded_fragments(frags_map, k, m, out_len, out_bufs, chunk->frag_size);
+            ec_encode_data(_frag_size, k, out_len, ec_table, in_bufs, out_bufs);
+            _ec_update_decoded_fragments(frags_map, k, m, out_len, out_bufs, _frag_size);
 
-        } else if (parity_type == NB_Parity_Type::CM) {
+        } else if (parity_type == Parity_Type::CM) {
             cm256_encoder_params cm_params;
-            cm_params.BlockBytes = chunk->frag_size;
-            cm_params.OriginalCount = chunk->data_frags;
-            cm_params.RecoveryCount = chunk->parity_frags;
+            cm_params.BlockBytes = _frag_size;
+            cm_params.OriginalCount = _data_frags;
+            cm_params.RecoveryCount = _parity_frags;
             cm256_block cm_blocks[MAX_DATA_FRAGS];
-            int next_parity = chunk->data_frags;
-            for (int i = 0; i < chunk->data_frags; ++i) {
+            int next_parity = _data_frags;
+            for (int i = 0; i < _data_frags; ++i) {
                 while (!frags_map[i]) {
-                    assert(next_parity < chunk->data_frags + chunk->parity_frags);
+                    assert(next_parity < _data_frags + _parity_frags);
                     frags_map[i] = frags_map[next_parity];
                     frags_map[next_parity] = 0;
                     ++next_parity;
@@ -848,36 +725,24 @@ _nb_derasure(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, int
                 if (frags_map[i]->data_index >= 0) {
                     cm_blocks[i].Index = frags_map[i]->data_index;
                 } else {
-                    cm_blocks[i].Index = chunk->data_frags + frags_map[i]->parity_index;
+                    cm_blocks[i].Index = _data_frags + frags_map[i]->parity_index;
                 }
                 cm_blocks[i].Block = nb_bufs_merge(&frags_map[i]->block, 0);
             }
             int decode_err = cm256_decode(cm_params, cm_blocks);
             if (decode_err) {
-                nb_chunk_error(
-                    chunk,
-                    "Chunk Decoder: erasure decode failed %i"
-                    " data_frags %i/%i"
-                    " parity_frags %i/%i",
-                    decode_err,
-                    num_avail_data_frags,
-                    chunk->data_frags,
-                    num_avail_parity_frags,
-                    chunk->parity_frags);
+                add_error(
+                    XSTR() << "Chunk Decoder: erasure decode failed " << decode_err
+                           << " data_frags " << num_avail_data_frags << "/" << _data_frags
+                           << " parity_frags " << num_avail_parity_frags << "/" << _parity_frags);
                 return;
             }
 
         } else {
-            nb_chunk_error(
-                chunk,
-                "Chunk Decoder: erasure decode bad type %s"
-                " data_frags %i/%i"
-                " parity_frags %i/%i",
-                chunk->parity_type,
-                num_avail_data_frags,
-                chunk->data_frags,
-                num_avail_parity_frags,
-                chunk->parity_frags);
+            add_error(
+                XSTR() << "Chunk Decoder: erasure decode bad type " << _parity_type
+                       << " data_frags " << num_avail_data_frags << "/" << _data_frags
+                       << " parity_frags " << num_avail_parity_frags << "/" << _parity_frags);
             return;
         }
 
@@ -886,9 +751,8 @@ _nb_derasure(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, int
     }
 }
 
-static void
-_nb_decrypt(
-    struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map, const EVP_CIPHER* evp_cipher)
+void
+Chunk_Coder::_decrypt(Chunk_Coder::Frag** frags_map, const EVP_CIPHER* evp_cipher)
 {
     EVP_CIPHER_CTX ctx;
     struct NB_Buf iv;
@@ -897,34 +761,33 @@ _nb_decrypt(
 
     // const int key_len = EVP_CIPHER_key_length(evp_cipher);
     const int iv_len = EVP_CIPHER_iv_length(evp_cipher);
-    const int decrypted_size = chunk->compress_size > 0 ? chunk->compress_size : chunk->size;
-    const int padded_size = _nb_align_up(decrypted_size, chunk->data_frags);
+    const int decrypted_size = _compress_size > 0 ? _compress_size : _size;
+    const int padded_size = _nb_align_up(decrypted_size, _data_frags);
 
     // using iv of zeros since we generate random key per chunk
     nb_buf_init_zeros(&iv, iv_len);
     EVP_CIPHER_CTX_init(&ctx);
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         EVP_CIPHER_CTX_cleanup(&ctx);
         nb_buf_free(&iv);
     });
 
-    evp_ret = EVP_DecryptInit_ex(&ctx, evp_cipher, NULL, chunk->cipher_key.data, iv.data);
+    evp_ret = EVP_DecryptInit_ex(&ctx, evp_cipher, NULL, _cipher_key.data, iv.data);
     if (!evp_ret) {
-        nb_chunk_error(chunk, "Chunk Decoder: cipher decrypt init failed %s", chunk->cipher_type);
+        add_error(XSTR() << "Chunk Decoder: cipher decrypt init failed " << _cipher_type);
         return;
     }
 
     if (EVP_CIPHER_CTX_mode(&ctx) == EVP_CIPH_GCM_MODE) {
-        if (USE_GCM_AUTH_TAG && chunk->cipher_auth_tag.len) {
+        if (USE_GCM_AUTH_TAG && _cipher_auth_tag.len) {
             evp_ret = EVP_CIPHER_CTX_ctrl(
                 &ctx,
                 EVP_CTRL_GCM_SET_TAG,
-                chunk->cipher_auth_tag.len,
-                chunk->cipher_auth_tag.data);
+                _cipher_auth_tag.len,
+                _cipher_auth_tag.data);
             if (!evp_ret) {
-                nb_chunk_error(
-                    chunk, "Chunk Decoder: cipher decrypt set tag failed %s", chunk->cipher_type);
+                add_error(XSTR() << "Chunk Decoder: cipher decrypt set tag failed " << _cipher_type);
                 return;
             }
         } else {
@@ -933,18 +796,17 @@ _nb_decrypt(
     }
 
     int pos = 0;
-    struct NB_Buf* b = nb_bufs_push_alloc(&chunk->data, padded_size);
+    struct NB_Buf* b = nb_bufs_push_alloc(&_data, padded_size);
 
-    for (int i = 0; i < chunk->data_frags; ++i) {
-        struct NB_Coder_Frag* f = frags_map[i];
+    for (int i = 0; i < _data_frags; ++i) {
+        Frag* f = frags_map[i];
         for (int j = 0; j < f->block.count; ++j) {
             struct NB_Buf* fb = nb_bufs_get(&f->block, j);
 
             int out_len = 0;
             evp_ret = EVP_DecryptUpdate(&ctx, b->data + pos, &out_len, fb->data, fb->len);
             if (!evp_ret) {
-                nb_chunk_error(
-                    chunk, "Chunk Decoder: cipher decrypt update failed %s", chunk->cipher_type);
+                add_error(XSTR() << "Chunk Decoder: cipher decrypt update failed " << _cipher_type);
                 return;
             }
             pos += out_len;
@@ -954,26 +816,26 @@ _nb_decrypt(
     int out_len = 0;
     evp_ret = EVP_DecryptFinal_ex(&ctx, 0, &out_len);
     if (!evp_ret && !skip_auth) {
-        nb_chunk_error(chunk, "Chunk Decoder: cipher decrypt final failed %s", chunk->cipher_type);
+        add_error(XSTR() << "Chunk Decoder: cipher decrypt final failed " << _cipher_type);
         return;
     }
     assert(!out_len);
 }
 
-static void
-_nb_no_decrypt(struct NB_Coder_Chunk* chunk, struct NB_Coder_Frag** frags_map)
+void
+Chunk_Coder::_no_decrypt(Chunk_Coder::Frag** frags_map)
 {
-    for (int i = 0; i < chunk->data_frags; ++i) {
-        struct NB_Coder_Frag* f = frags_map[i];
+    for (int i = 0; i < _data_frags; ++i) {
+        Frag* f = frags_map[i];
         for (int j = 0; j < f->block.count; ++j) {
             struct NB_Buf* b = nb_bufs_get(&f->block, j);
-            nb_bufs_push_shared(&chunk->data, b->data, b->len);
+            nb_bufs_push_shared(&_data, b->data, b->len);
         }
     }
 }
 
-static void
-_nb_digest(const EVP_MD* md, struct NB_Bufs* data, struct NB_Buf* digest)
+void
+Chunk_Coder::_digest_calc(const EVP_MD* md, struct NB_Bufs* data, struct NB_Buf* digest)
 {
     EVP_MD_CTX ctx_md;
     EVP_MD_CTX_init(&ctx_md);
@@ -993,12 +855,12 @@ _nb_digest(const EVP_MD* md, struct NB_Bufs* data, struct NB_Buf* digest)
     EVP_MD_CTX_cleanup(&ctx_md);
 }
 
-static bool
-_nb_digest_match(const EVP_MD* md, struct NB_Bufs* data, struct NB_Buf* digest)
+bool
+Chunk_Coder::_digest_match(const EVP_MD* md, struct NB_Bufs* data, struct NB_Buf* digest)
 {
     struct NB_Buf computed_digest;
     nb_buf_init(&computed_digest);
-    _nb_digest(md, data, &computed_digest);
+    _digest_calc(md, data, &computed_digest);
 
     bool match =
         (computed_digest.len == digest->len &&

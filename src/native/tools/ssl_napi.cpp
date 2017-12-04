@@ -75,7 +75,7 @@ _nb_x509(napi_env env, napi_callback_info info)
     EVP_PKEY_CTX* ctx = NULL;
     X509* x509 = NULL;
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         if (issuer_x509_name != owner_x509_name) {
             X509_NAME_free(issuer_x509_name);
         }
@@ -217,7 +217,7 @@ _nb_x509_verify(napi_env env, napi_callback_info info)
     EVP_PKEY* issuer_private_key = NULL;
     X509* x509 = NULL;
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         EVP_PKEY_free(issuer_private_key);
         X509_free(x509);
     });

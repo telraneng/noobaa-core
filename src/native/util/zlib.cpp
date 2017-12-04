@@ -2,7 +2,6 @@
 #include "zlib.h"
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stdio.h>
 
 #include <zlib.h>
@@ -15,7 +14,7 @@ namespace noobaa
 DBG_INIT(0);
 
 int
-nb_zlib_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
+nb_zlib_compress(struct NB_Bufs* bufs, std::list<std::string>& errors)
 {
     int z_res;
     z_stream strm;
@@ -31,15 +30,16 @@ nb_zlib_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
     strm.next_in = 0;
     strm.avail_in = 0;
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         nb_bufs_free(&out);
         deflateEnd(&strm);
     });
 
     z_res = deflateInit(&strm, Z_BEST_SPEED);
     if (z_res != Z_OK) {
-        nb_bufs_push_printf(
-            errors, 256, "nb_zlib_compress: deflateInit() error %i %s", z_res, strm.msg);
+        errors.push_back(
+            XSTR() << "nb_zlib_compress: deflateInit() "
+                   << DVAL(z_res) << DVAL(strm.msg));
         return -1;
     }
 
@@ -60,14 +60,12 @@ nb_zlib_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
             case Z_BUF_ERROR:
                 break;
             default:
-                nb_bufs_push_printf(
-                    errors,
-                    256,
-                    "nb_zlib_compress: deflate(Z_NO_FLUSH) error %i %s avail_in %i avail_out %i",
-                    z_res,
-                    strm.msg,
-                    strm.avail_in,
-                    strm.avail_out);
+                errors.push_back(
+                    XSTR() << "nb_zlib_compress: deflate(Z_NO_FLUSH) error "
+                           << DVAL(z_res)
+                           << DVAL(strm.msg)
+                           << DVAL(strm.avail_in)
+                           << DVAL(strm.avail_out));
                 return -1;
             }
         }
@@ -90,8 +88,9 @@ nb_zlib_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
             }
             break;
         default:
-            nb_bufs_push_printf(
-                errors, 256, "nb_zlib_compress: deflate(Z_FINISH) error %i %s", z_res, strm.msg);
+            errors.push_back(
+                XSTR() << "nb_zlib_compress: deflate(Z_FINISH) error "
+                       << DVAL(z_res) << DVAL(strm.msg));
             return -1;
         }
     }
@@ -102,8 +101,9 @@ nb_zlib_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
 
     z_res = deflateEnd(&strm);
     if (z_res != Z_OK) {
-        nb_bufs_push_printf(
-            errors, 256, "nb_zlib_compress: deflateEnd() error %i %s", z_res, strm.msg);
+        errors.push_back(
+            XSTR() << "nb_zlib_compress: deflateEnd() error "
+                   << DVAL(z_res) << DVAL(strm.msg));
         return -1;
     }
 
@@ -116,7 +116,7 @@ nb_zlib_compress(struct NB_Bufs* bufs, struct NB_Bufs* errors)
 }
 
 int
-nb_zlib_uncompress(struct NB_Bufs* bufs, int uncompressed_len, struct NB_Bufs* errors)
+nb_zlib_uncompress(struct NB_Bufs* bufs, int uncompressed_len, std::list<std::string>& errors)
 {
     int z_res;
     z_stream strm;
@@ -132,15 +132,16 @@ nb_zlib_uncompress(struct NB_Bufs* bufs, int uncompressed_len, struct NB_Bufs* e
     strm.next_in = 0;
     strm.avail_in = 0;
 
-    StackCleaner cleaner([&] {
+    ON_RETURN cleanup([&] {
         nb_bufs_free(&out);
         inflateEnd(&strm);
     });
 
     z_res = inflateInit(&strm);
     if (z_res != Z_OK) {
-        nb_bufs_push_printf(
-            errors, 256, "nb_zlib_uncompress: inflateInit() error %i %s", z_res, strm.msg);
+        errors.push_back(
+            XSTR() << "nb_zlib_uncompress: inflateInit() error "
+                   << DVAL(z_res) << DVAL(strm.msg));
         return -1;
     }
 
@@ -161,12 +162,9 @@ nb_zlib_uncompress(struct NB_Bufs* bufs, int uncompressed_len, struct NB_Bufs* e
             case Z_BUF_ERROR:
                 break;
             default:
-                nb_bufs_push_printf(
-                    errors,
-                    256,
-                    "nb_zlib_compress: inflate(Z_NO_FLUSH) error %i %s",
-                    z_res,
-                    strm.msg);
+                errors.push_back(
+                    XSTR() << "nb_zlib_compress: inflate(Z_NO_FLUSH) "
+                           << DVAL(z_res) << DVAL(strm.msg));
                 return -1;
             }
         }
@@ -189,8 +187,9 @@ nb_zlib_uncompress(struct NB_Bufs* bufs, int uncompressed_len, struct NB_Bufs* e
             }
             break;
         default:
-            nb_bufs_push_printf(
-                errors, 256, "nb_zlib_compress: inflate(Z_FINISH) error %i %s", z_res, strm.msg);
+            errors.push_back(
+                XSTR() << "nb_zlib_compress: inflate(Z_FINISH) error "
+                       << DVAL(z_res) << DVAL(strm.msg));
             return -1;
         }
     }
@@ -201,8 +200,9 @@ nb_zlib_uncompress(struct NB_Bufs* bufs, int uncompressed_len, struct NB_Bufs* e
 
     z_res = inflateEnd(&strm);
     if (z_res != Z_OK) {
-        nb_bufs_push_printf(
-            errors, 256, "nb_zlib_compress: inflateEnd() error %i %s", z_res, strm.msg);
+        errors.push_back(
+            XSTR() << "nb_zlib_compress: inflateEnd() error "
+                   << DVAL(z_res) << DVAL(strm.msg));
         return -1;
     }
 

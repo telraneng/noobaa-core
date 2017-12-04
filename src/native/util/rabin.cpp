@@ -1,7 +1,6 @@
 /* Copyright (C) 2016 NooBaa */
 #include "rabin.h"
 #include <assert.h>
-#include <stdbool.h>
 
 namespace noobaa
 {
