@@ -1,0 +1,18 @@
+# systemd service unit for noobaad
+# (https://www.freedesktop.org/software/systemd/man/systemd.unit.html)
+
+[Unit]
+Description=NooBaa node service
+StartLimitInterval=10
+StartLimitBurst=5
+
+[Service]
+ExecStart=/usr/local/noobaa/node /usr/local/noobaa/src/agent/agent_wrap.js
+Restart=always
+SyslogIdentifier=noobaad
+User=root
+Group=root
+Environment=
+
+[Install]
+WantedBy=multi-user.target

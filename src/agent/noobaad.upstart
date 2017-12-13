@@ -1,13 +1,13 @@
 #!upstart
-#noobaalocalservice upstart configuration script
+#noobaad upstart configuration script
 
-description "noobaalocalservice startup script for upstart based initialization."
+description "noobaad startup script for upstart based initialization."
 
 start on runlevel [2345]
 stop on shutdown
 respawn
 
-env LOGFILE="/var/log/noobaalocalservice.log"
+env LOGFILE="/var/log/noobaad.log"
 
 env MIN_UPTIME="5000"
 env SPIN_SLEEP_TIME="2000"
@@ -24,5 +24,5 @@ script
 end script
 
 post-start script
-  echo "noobaalocalservice started"
+  echo "noobaad started"
 end script

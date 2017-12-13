@@ -1,39 +1,65 @@
 #!/bin/bash
 
 # this script installs the agent package on linux.
-# it is bundled in the makeself package and executed when unpacked.
+# it is bundled in the package and executed when unpacked.
 
-ISO_TIME=$(date -u +"%Y%m%dT%H%M%SZ")
-LOG_FILE="/var/log/noobaa_install_service_${ISO_TIME}"
 INSTDIR="/usr/local/noobaa"
 
 main()
 {
-    echo_to_log "Logging to ${LOGFILE}"
+    log "$(date -u +'%Y%m%dT%H%M%SZ.%N')"
 
+    log "Preparing folder ..."
+    rm -rf ${INSTDIR}.new
     mkdir -p ${INSTDIR}.new
+
+    for arg in "$@"
+    do
+        # config is the first argument that is not a flag which means it doesn't starts with - or /
+        if [[ $arg != -* && $arg != /* ]]
+        then
+            log "Parsing config argument ..."
+            run ./node -e "fs.writeFileSync(\"${INSTDIR}.new/agent_conf.json\", JSON.stringify(JSON.parse(Buffer.from(\"$arg\",'base64')), null, 2))"
+        fi
+    done
+
+    log "Copying files ..."
     cp -R . ${INSTDIR}.new/
 
     if [ -d ${INSTDIR} ]
     then
-        cp \
-            ${INSTDIR}/agent_conf.json \
-            ${INSTDIR}/.env \
-            ${INSTDIR}.new/
-    else
-        # config is the first argument that is not a flag which means it doesn't starts with - or /
-        for arg in "$@"
-        do
-            if [[ $arg != -* && $arg != /* ]]
-            then
-                config=$arg
-            fi
-        done
+        log "Copying config files ..."
+        if [ ! -f ${INSTDIR}.new/agent_conf.json ]
+        then
+            cp ${INSTDIR}/agent_conf.json ${INSTDIR}.new/
+        else
+            log "WARNING: Previous installation config overriden by new config argument"
+        fi
+        cp ${INSTDIR}/.env ${INSTDIR}.new/
     fi
 
+    if [ ! -f ${INSTDIR}.new/agent_conf.json ]
+    then
+        log "ERROR: missing config"
+        exit 1
+    fi
+
+    if [ -f ${INSTDIR}/src/agent/service.sh ]
+    then
+        log "Uninstalling service ..."
+        run warn bash ${INSTDIR}/src/agent/service.sh uninstall
+    fi
+
+    log "Switching to new folder ..."
     [ -d ${INSTDIR}.old ] && rm -rf ${INSTDIR}.old
     [ -d ${INSTDIR}     ] && mv ${INSTDIR} ${INSTDIR}.old
     mv ${INSTDIR}.new ${INSTDIR}
+
+    log "Installing service ..."
+    run warn bash ${INSTDIR}/src/agent/service.sh uninstall
+    run bash ${INSTDIR}/src/agent/service.sh install
+
+    log "NooBaa agent installed successfuly"
 }
 
 
@@ -41,34 +67,33 @@ main()
 # UTILS #
 #########
 
-echo_log()
+log()
 {
-    echo "$@"
-    echo "$@" >> ${LOG_FILE}
+    logger -s -t noobaa_install "=====>" "$@"
 }
 
-run_command()
+run()
 {
-    local -i rc
-    local -i warn
+    local -i warn=0     # int
+    local -a rc=()      # array
+    local -a errors=()  # array
 
-    if [[ "$1" == "warn" ]]
-    then 
-        warn=1
-        shift
-    fi
+    [[ "$1" == "warn" ]] && { warn=1; shift; }
+    log "Running command:" "$@"
 
-    echo_log "Running command:" "$@"
-    "$@" >> ${LOG_FILE} 2>&1
-    rc=$?
+    # checking the return code of all the piped processes
+    # errors array filters out zero return codes using pattern substitution ${arr[@]/pattern/replacement}
+    "$@" 2>&1 | logger -s -t noobaa_install
+    rc=(${PIPESTATUS[@]})
+    errors=(${rc[@]/0})
 
-    if (( rc ))
+    if (( ${#errors[@]} ))
     then
         if (( warn ))
         then
-            echo_log "WARNING: Comand failed with $rc:" "$@"
+            log "WARNING: Command failed:" "$rc" "$@"
         else
-            echo_log "ERROR: Comand failed with $rc:" "$@"
+            log "ERROR: Command failed:" "$rc" "$@"
             exit 1
         fi
     fi

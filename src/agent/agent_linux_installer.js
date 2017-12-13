@@ -10,8 +10,8 @@ const Service = require('node-linux').Service;
 const argv = require('minimist')(process.argv);
 
 var srv = new Service({
-    name: 'noobaalocalservice',
-    description: 'The NooBaa node service.',
+    name: 'noobaad',
+    description: 'NooBaa node service',
     script: '/usr/local/noobaa/src/agent/agent_wrap.js',
     wait: 10,
     logpath: '/var/log',

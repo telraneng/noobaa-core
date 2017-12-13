@@ -1,28 +1,21 @@
 #!/bin/bash
 
+. ~/.bashrc
 nvm install || exit 1
 BLD=$WORKSPACE/build/agent_linux
-ART=$WORKSPACE/artifacts
 
 echo "=====> clean $BLD"
 rm -rf $BLD
 mkdir -p $BLD/package/src
-mkdir -p $ART
 
 echo "=====> pushd $BLD"
 pushd $BLD
 
-echo "=====> copy makeself to $BLD/"
-wget -P $BLD https://raw.githubusercontent.com/megastep/makeself/master/makeself.sh || exit 1
-wget -P $BLD https://raw.githubusercontent.com/megastep/makeself/master/makeself-header.sh || exit 1
-# replace -- with /S in order to use exactly the same flags like windows.
-sed -i s/'\--)'/'\/S)'/ $BLD/makeself-header.sh
-chmod +x $BLD/makeself.sh
-
 echo "=====> copy package files to $BLD/package/"
 cp \
-    $(nvm which current)
+    $(nvm which current) \
     $WORKSPACE/package.json \
+    $WORKSPACE/npm-shrinkwrap.json \
     $WORKSPACE/binding.gyp \
     $WORKSPACE/config.js \
     $WORKSPACE/src/deploy/agent_linux/install_noobaa_agent.sh \
@@ -54,15 +47,21 @@ echo "=====> version $NB_VERSION"
 echo "=====> npm install --production"
 npm install --production || exit 1
 
-echo "=====> delete native sources from the package"
-rm -rf binding.gyp src/native/ || exit 1
+echo "=====> remove unwanted files from the package"
+rm -rf \
+    binding.gyp \
+    src/native/ \
+    build/src \
+    build/Release/.deps \
+    build/Release/obj.target \
+    || exit 1
 
 echo "=====> popd package"
 popd
 
 echo "=====> make installer"
-$BLD/makeself.sh $BLD/package $ART/noobaa-setup-$NB_VERSION $NB_VERSION ./install_noobaa_agent.sh || exit 1
-echo "=====> installer: $ART/noobaa-setup-$NB_VERSION"
+go run $WORKSPACE/src/tools/sfx/sfx.go $BLD/noobaa-setup-$NB_VERSION $BLD/package install_noobaa_agent.sh || exit 1
+echo "=====> installer: $BLD/noobaa-setup-$NB_VERSION"
 
 echo "=====> popd $BLD"
 popd

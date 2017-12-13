@@ -20,6 +20,7 @@ for /f "usebackq tokens=*" %%x in ('where node.exe') do set NODE_EXE=%%x
 echo "=====> copy package files to %BLD%"
 copy "%NODE_EXE%" "%BLD%" || exit 1
 copy "%WORKSPACE%\package.json" "%BLD%" || exit 1
+copy "%WORKSPACE%\npm-shrinkwrap.json" "%BLD%" || exit 1
 copy "%WORKSPACE%\binding.gyp" "%BLD%" || exit 1
 copy "%WORKSPACE%\config.js" "%BLD%" || exit 1
 copy "%WORKSPACE%\src\deploy\windows\7za.exe" "%BLD%" || exit 1

@@ -21,17 +21,16 @@ function collect_agent_diagnostics() {
         .then(function() {
             if (fs.existsSync(process.cwd() + '/logs')) {
                 //will take only noobaa.log and the first 9 zipped logs
-                return fs_utils.full_dir_copy(process.cwd() + '/logs', TMP_WORK_DIR,
-                    'noobaa?[1-9][0-9].log.gz');
-            } else {
-                return;
+                return fs_utils.full_dir_copy(
+                    process.cwd() + '/logs',
+                    TMP_WORK_DIR,
+                    'noobaa?[1-9][0-9].log.gz'
+                );
             }
         })
         .then(function() {
-            if (fs.existsSync('/var/log/noobaalocalservice.log')) {
-                return fs_utils.file_copy('/var/log/noobaalocalservice.log', TMP_WORK_DIR);
-            } else {
-                return;
+            if (fs.existsSync('/var/log/noobaad.log')) {
+                return fs_utils.file_copy('/var/log/noobaad.log', TMP_WORK_DIR);
             }
         })
         .then(function() {
