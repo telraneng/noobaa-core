@@ -13,6 +13,19 @@ const mongodb = require('mongodb');
 const config = require('../../../config.js');
 const mapper = require('../../server/object_services/mapper');
 
+const PB_STORAGE = Object.freeze({ peta: 1, n: 0 });
+const X2_PB_STORAGE = Object.freeze({ peta: 2, n: 0 });
+const ZERO_STORAGE = Object.freeze({
+    free: 0,
+    regular_free: 0,
+    redundant_free: 0,
+});
+const FULL_STORAGE = Object.freeze({
+    free: X2_PB_STORAGE,
+    regular_free: PB_STORAGE,
+    redundant_free: PB_STORAGE,
+});
+
 coretest.describe_mapper_test_case({
     name: 'mapper',
 }, ({
@@ -87,45 +100,9 @@ coretest.describe_mapper_test_case({
         ({ tier }) => [tier._id, _.flatMap(tier.mirrors, 'spread_pools')]
     ));
 
-    const ZERO_STORAGE = { free: 0, regular_free: 0, redundant_free: 0 };
-    const FULL_STORAGE = {
-        free: { peta: 2, n: 0 },
-        regular_free: { peta: 1, n: 0 },
-        redundant_free: { peta: 1, n: 0 }
-    };
 
-    const default_tiering_status = _.fromPairs(_.map(tiering.tiers,
-        ({ tier, spillover }) => [tier._id, {
-            pools: _.fromPairs(_.map(pools_by_tier_id[tier._id],
-                pool => [pool._id, { valid_for_allocation: true, num_nodes: config.NODES_MIN_COUNT }]
-            )),
-            mirrors_storage: tier.mirrors.map(mirror => FULL_STORAGE)
-        }]
-    ));
-    const spillover_tiering_status = _.fromPairs(_.map(tiering.tiers,
-        ({ tier, spillover }) => [tier._id, {
-            pools: _.fromPairs(_.map(pools_by_tier_id[tier._id],
-                pool => [pool._id, { valid_for_allocation: true, num_nodes: config.NODES_MIN_COUNT }]
-            )),
-            mirrors_storage: tier.mirrors.map(mirror => (spillover ? FULL_STORAGE : ZERO_STORAGE))
-        }]
-    ));
-    const empty_tiering_status = _.fromPairs(_.map(tiering.tiers,
-        ({ tier, spillover }) => [tier._id, {
-            pools: _.fromPairs(_.map(pools_by_tier_id[tier._id],
-                pool => [pool._id, { valid_for_allocation: true, num_nodes: config.NODES_MIN_COUNT }]
-            )),
-            mirrors_storage: tier.mirrors.map(mirror => ZERO_STORAGE)
-        }]
-    ));
-    const regular_tiering_status = _.fromPairs(_.map(tiering.tiers,
-        ({ tier, spillover }) => [tier._id, {
-            pools: _.fromPairs(_.map(pools_by_tier_id[tier._id],
-                pool => [pool._id, { valid_for_allocation: true, num_nodes: config.NODES_MIN_COUNT }]
-            )),
-            mirrors_storage: tier.mirrors.map(mirror => (spillover ? ZERO_STORAGE : FULL_STORAGE))
-        }]
-    ));
+    const default_tiering_status = make_tiering_status(tiering, () => FULL_STORAGE);
+    const spillover_tiering_status = make_tiering_status(tiering, ({ spillover }) => (spillover ? FULL_STORAGE : ZERO_STORAGE));
 
     mocha.describe('allocations', function() {
 
@@ -359,6 +336,9 @@ coretest.describe_mapper_test_case({
 
     mocha.describe('tiering', function() {
 
+        const empty_tiering_status = make_tiering_status(tiering, () => ZERO_STORAGE);
+        const regular_tiering_status = make_tiering_status(tiering, ({ spillover }) => (spillover ? ZERO_STORAGE : FULL_STORAGE));
+    
         const REGULAR = 'regular';
         const SPILLOVER = 'spillover';
         const TIERING_STATUS = Symbol('tiering_status_symbol');
@@ -500,6 +480,137 @@ coretest.describe_mapper_test_case({
             assert(_.includes(tier_pools, block.pool), `assert_deletions_in_tier expected tier ${tier.name} found pool ${pool_by_id[block.pool].name}`)
         ));
     }
+
+    function make_tiering_status(tiering_arg, storage_func) {
+        return _.fromPairs(_.map(tiering_arg.tiers, ({ tier, spillover }) => [tier._id, {
+            mirrors_storage: tier.mirrors.map(mirror => storage_func({ tier, spillover, mirror }))
+        }]));
+    }
+
+    mocha.describe.only('new test', function() {
+
+        function make_tiering() {
+            const default_pools = _.times(num_pools, i => ({ _id: new mongodb.ObjectId(), name: 'pool' + i, }));
+            const spill_pools = _.times(num_pools, i => ({ _id: new mongodb.ObjectId(), name: 'spill_pool' + i, }));
+            const external_pools = _.times(num_pools, i => ({ _id: new mongodb.ObjectId(), name: 'external_pool' + i, }));
+            const mirrors = data_placement === 'MIRROR' ?
+                default_pools.map(pool => ({ spread_pools: [pool] })) : [{ spread_pools: default_pools }];
+            const spill_mirrors = data_placement === 'MIRROR' ?
+                spill_pools.map(pool => ({ spread_pools: [pool] })) : [{ spread_pools: spill_pools }];
+            const default_tier = {
+                _id: new mongodb.ObjectId(),
+                name: 'default_tier',
+                data_placement,
+                mirrors: regular_mirrors,
+                chunk_config: { chunk_coder_config },
+            };
+            const spillover_tier = {
+                _id: new mongodb.ObjectId(),
+                name: 'spillover_tier',
+                data_placement,
+                mirrors: spill_mirrors,
+                chunk_config: { chunk_coder_config },
+            };
+            const tiers = [{
+                order: 0,
+                tier: default_tier,
+                spillover: false,
+                disabled: false
+            }, {
+                order: 1,
+                tier: spillover_tier,
+                spillover: true,
+                disabled: false
+            }];
+            const __pool_by_id = _.keyBy(_.concat(default_pools, spill_pools, external_pools), '_id');
+            const __pools_by_tier_id = _.fromPairs(_.map(tiers,
+                ({ tier }) => [tier._id, _.flatMap(tier.mirrors, 'spread_pools')]
+            ));
+            const __tiering_status = _.fromPairs(_.map(tiers,
+                ({ tier, spillover }) => [tier._id, {
+                    pools: _.fromPairs(_.map(__pools_by_tier_id[tier._id],
+                        pool => [pool._id, { valid_for_allocation: true, num_nodes: config.NODES_MIN_COUNT }]
+                    )),
+                    mirrors_storage: tier.mirrors.map(mirror => ({ free: { peta: 1, n: 0 } }))
+                }]
+            ));
+            const tiering = {
+                _id: new mongodb.ObjectId(),
+                name: 'tiering_policy',
+                tiers,
+                // test properties:
+                __pool_by_id,
+                __pools_by_tier_id,
+                __tiering_status,
+            };
+            return tiering;
+        }
+
+        mocha.it('spread should not mix redundant pools with regular pools (cloud vs. node)', function() {
+            const chunk = {
+                _id: 1,
+                frags,
+                chunk_coder_config,
+                blocks: _.concat(
+                    // make_blocks({ count: data_frags * replicas, frags: avail_frags, pool }),
+                    // make_blocks({ count: total_frags * remain_pools.length * replicas, pools: remain_pools })
+                    make_blocks({ count: data_frags * total_replicas, frags: avail_frags })
+                )
+            };
+            const mapping = mapper.map_chunk(chunk, tiering, default_tiering_status);
+
+        });
+
+
+        if (num_pools === 2 && data_placement === 'MIRROR' && replicas === 1 && data_frags === 4 && parity_frags === 2) {
+            mocha.it('should replicate EC fragment between mirrors', function() {
+                // TODO separate to 3 cases - only parity, only data, mix
+                const avail_frags = _.sampleSize(frags, data_frags);
+                const missing_frags = _.difference(frags, avail_frags);
+                const pool = _.sample(pools_by_tier_id[regular_tier._id]);
+                const remain_pools = _.without(pools_by_tier_id[regular_tier._id], pool);
+                const chunk = {
+                    _id: 1,
+                    frags,
+                    chunk_coder_config,
+                    blocks: _.concat(
+                        // make_blocks({ count: data_frags * replicas, frags: avail_frags, pool }),
+                        // make_blocks({ count: total_frags * remain_pools.length * replicas, pools: remain_pools })
+                        make_blocks({ count: data_frags * total_replicas, frags: avail_frags })
+                    )
+                };
+                const mapping = mapper.map_chunk(chunk, tiering, default_tiering_status);
+                console.log(mapping);
+
+                /*
+                assert(mapping.accessible, 'accessible');
+                assert.strictEqual(mapping.deletions, undefined);
+                if (parity_frags) {
+                    const allocs_per_frag = _.groupBy(mapping.allocations, ({ frag }) => _frag_index(frag));
+                    assert.deepStrictEqual(Object.keys(allocs_per_frag).sort(), missing_frags.map(_frag_index).sort(),
+                        `Object.keys(allocs_per_frag).sort() === missing_frags.map(_frag_index).sort()`);
+                    assert.deepStrictEqual(_.uniq(mapping.missing_frags).map(_frag_index).sort(), missing_frags.map(_frag_index).sort(),
+                        `mapping.missing_frags.map(_frag_index).sort() === missing_frags.map(_frag_index).sort()`);
+                    _.forEach(allocs_per_frag, allocs => {
+                        assert.strictEqual(allocs.length, total_replicas, `allocs.length === total_replicas`);
+                        _.forEach(allocs, alloc => {
+                            assert.strictEqual(alloc.sources, undefined);
+                            // const sources_by_frag = _.groupBy(alloc.sources.accessible_blocks, ({ frag_index }) => frag_index);
+                            // assert.deepStrictEqual(Object.keys(sources_by_frag).sort(), avail_frags.map(_frag_index).sort(),
+                            //     `Object.keys(sources_by_frag).sort() === avail_frags.map(_frag_index).sort()`);
+                        });
+                    });
+                    assert.strictEqual(mapping.allocations.length, parity_frags * total_replicas);
+                    assert_allocations_in_tier(mapping.allocations, regular_tier);
+                } else {
+                    assert.strictEqual(mapping.allocations, undefined);
+                }
+                */
+            });
+        }
+
+
+    });
 
 });
 

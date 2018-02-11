@@ -324,8 +324,6 @@ class TierMapper {
             }
         }
 
-        // TODO GUY GAP maximum between mirrors? not minimum?
-
         // We allow to upload to one mirror even if other mirrors don't have any space left
         // That is why we are picking the maximum value of free from the mirrors of the tier
         const available_to_upload = size_utils.json_to_bigint(size_utils.reduce_maximum(
