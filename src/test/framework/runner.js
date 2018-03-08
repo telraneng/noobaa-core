@@ -247,12 +247,12 @@ class TestRunner {
         }
         if (current_step.common) {
             console.log('running', step_res);
-            dbg.set_log_to_file(path.join(process.cwd(), COVERAGE_DIR, current_step.name.replace(/ /g, '_')) + '.log');
+            dbg.set_log_file(path.join(process.cwd(), COVERAGE_DIR, current_step.name.replace(/ /g, '_')) + '.log');
             var ts = new Date();
             return P.resolve()
                 .then(() => self[current_step.common].apply(self))
                 .timeout(current_step.timeout || DEFAULT_TEST_TIMEOUT)
-                .finally(() => dbg.set_log_to_file())
+                .finally(() => dbg.set_log_file())
                 .then(function() {
                     return step_res + ' - Successful common step ( took ' +
                         ((new Date() - ts) / 1000) + 's )';

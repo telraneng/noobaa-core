@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { human_size } = require('../../util/size_utils');
-const { get_folder_size, create_path } = require('../../util/fs_utils');
+const { disk_usage, create_path } = require('../../util/fs_utils');
 
 const FE_DUMP_DIR = path.join(
     os.type() === 'Darwin' ? path.join(process.cwd(), 'logs') : '/var/log',
@@ -61,7 +61,7 @@ async function upload_fe_dump(req) {
 
 async function _clean_excess_fe_dumps(dir, size_limit) {
     try {
-        let size_over_limit = (await get_folder_size(dir)) - size_limit;
+        let size_over_limit = (await disk_usage(dir)).size - size_limit;
         if (size_over_limit > 0) {
             dbg.log0(`_clean_excess_fe_dumps: trying to clean ${human_size(size_over_limit)}`);
 

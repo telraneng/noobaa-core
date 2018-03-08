@@ -6,7 +6,8 @@ const cluster = require('cluster');
 const argv = require('minimist')(process.argv);
 const Speedometer = require('../util/speedometer');
 
-require('../util/console_wrapper').original_console();
+const dbg = require('../util/debug_module')(__filename);
+dbg.original_console();
 
 argv.forks = argv.forks || 1;
 argv.size = argv.size || 1024;

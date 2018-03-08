@@ -15,7 +15,6 @@ const os = require('os');
 const P = require('../util/promise');
 const api = require('../api');
 const pkg = require('../../package.json');
-const DebugLogger = require('../util/debug_module');
 const diag = require('./agent_diagnostics');
 const config = require('../../config');
 const os_utils = require('../util/os_utils');
@@ -24,6 +23,7 @@ const url_utils = require('../util/url_utils');
 const time_utils = require('../util/time_utils');
 const ssl_utils = require('../util/ssl_utils');
 const FuncNode = require('./func_services/func_node');
+const debug_module = require('../util/debug_module');
 const BlockStoreFs = require('./block_store_services/block_store_fs').BlockStoreFs;
 const BlockStoreS3 = require('./block_store_services/block_store_s3').BlockStoreS3;
 const BlockStoreMongo = require('./block_store_services/block_store_mongo').BlockStoreMongo;
@@ -44,7 +44,7 @@ class Agent {
     constructor(params) {
 
         // We set the agent name to dbg logger
-        this.dbg = new DebugLogger(__filename);
+        this.dbg = debug_module(__filename);
         this.dbg.set_logger_name('Agent.' + params.node_name);
         const dbg = this.dbg;
         dbg.log0('Creating agent', params);
@@ -730,7 +730,7 @@ class Agent {
             n2n_config: this.n2n_agent.get_plain_n2n_config(),
             enabled: this.enabled,
             geolocation: this.geolocation,
-            debug_level: dbg.get_module_level('core'),
+            debug_level: dbg.get_level('core'),
             node_type: this.node_type,
             mem_usage: process.memoryUsage().rss,
             cpu_usage: cpu_percent

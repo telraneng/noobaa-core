@@ -90,9 +90,9 @@ class Dispatcher {
     }
 
     //Remote Syslog
-    send_syslog(item) {
-        dbg.log3('Sending external syslog', item);
-        nb_native().syslog(SYSLOG_INFO_LEVEL, 'NooBaa ' + item.description, SYSLOG_LOG_LOCAL0);
+    send_syslog(message) {
+        dbg.log3('Sending external syslog', message);
+        nb_native().syslog(SYSLOG_INFO_LEVEL, 'NooBaa ' + message, SYSLOG_LOG_LOCAL0);
     }
 
     //Alerts
@@ -113,9 +113,7 @@ class Dispatcher {
                             alert: alert
                         })
                         .then(res => {
-                            this.send_syslog({
-                                description: alert
-                            });
+                            this.send_syslog(alert);
                             return this.publish_fe_notifications({ ids: [res._id] }, 'alert');
                         });
                 }

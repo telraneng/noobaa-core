@@ -21,8 +21,8 @@
 
     - .set_level(level) change current module logging level
     - .set_level(level,module) change given module logging level and all its sub-tree
-    - .logX (...) logs if current module level or any of its parents >= X
-    - .logX_withbt logs and adds backtrace if current module level or any of its parents >= X
+    - .logX(...) logs if current module level or any of its parents >= X
+    - .traceX(...) logs and adds backtrace if current module level or any of its parents >= X
     - trace / log / info / error / warn will always log. They exist to comply with syslog levels
       and replace usage of console.XXX in our modules. error and warn levels will be marked in RED.
 
@@ -34,7 +34,7 @@
 
      This will create an object dbg and will create the filename module (e.g. noobaa-core/src/some/module.js will create core.some.module). The default log level of the module is 0.
 
-  2) Calling logX or logX_withbt will compare X to the current level of the module, if the current level is equal or higher, the message will be logged.
+  2) Calling logX or traceX will compare X to the current level of the module, if the current level is equal or higher, the message will be logged.
 
      ___dbg.log0("This message will be logged since the default level is 0");___
 

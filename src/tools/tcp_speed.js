@@ -9,7 +9,8 @@ const cluster = require('cluster');
 const ssl_utils = require('../util/ssl_utils');
 const Speedometer = require('../util/speedometer');
 
-require('../util/console_wrapper').original_console();
+const dbg = require('../util/debug_module')(__filename);
+dbg.original_console();
 
 // common
 argv.port = Number(argv.port) || 50505;

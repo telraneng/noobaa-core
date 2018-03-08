@@ -18,7 +18,8 @@ const ChunkSplitter = require('../util/chunk_splitter');
 const FlattenStream = require('../util/flatten_stream');
 // const CoalesceStream = require('../util/coalesce_stream');
 
-require('../util/console_wrapper').original_console();
+const dbg = require('../util/debug_module')(__filename);
+dbg.original_console();
 
 argv.forks = argv.forks || 1;
 argv.size = argv.size || 10240;

@@ -2,30 +2,38 @@
 'use strict';
 
 var _ = require('lodash');
-var P = require('../../util/promise');
+var fs = require('fs');
+var os = require('os');
 var mocha = require('mocha');
 var assert = require('assert');
-var fs = require('fs');
+
+var P = require('../../util/promise');
 var DebugModule = require('../../util/debug_module');
-var os = require('os');
-var promise_utils = require('../../util/promise_utils');
 
-// File Content Verifier according to given expected result (positive/negative)
-function file_content_verify(flag, expected) {
-    return P.delay(1000).then(function() {
+async function read_last_msg() {
+    await P.delay(1000);
 
-        var content;
-        if (os.type() === 'Darwin') {
-            content = fs.readFileSync("./logs/noobaa.log", "utf8");
-        } else {
-            content = fs.readFileSync("/var/log/noobaa.log", "utf8");
-        }
-        if (flag === "text") { // Verify Log requests content
-            assert(content.indexOf(expected) !== -1);
-        } else if (flag === "no_text") { // Verify Log request DOES NOT appear
-            assert(content.indexOf(expected) === -1);
-        }
-    });
+    var content;
+    if (os.type() === 'Darwin') {
+        content = await fs.readFileAsync('./logs/noobaa.log', 'utf8');
+    } else {
+        content = await fs.readFileAsync('/var/log/noobaa.log', 'utf8');
+    }
+    content = content.slice(-1024);
+    const lines = content.split('\n').filter(line => line);
+    const line = _.last(lines);
+    const msg = line.split(':').slice(3).join(':');
+    return msg.trim();
+}
+
+async function assert_in_log(expected) {
+    const line = await read_last_msg();
+    assert.strictEqual(line, expected);
+}
+
+async function assert_not_in_log(unexpected) {
+    const line = await read_last_msg();
+    assert.notStrictEqual(line, unexpected);
 }
 
 
@@ -85,81 +93,67 @@ mocha.describe('debug_module', function() {
         assert.strictEqual(dbg._cur_level.__level, 3);
     });
 
-    mocha.it('should log when level is appropriate', function() {
-        var rotation_command = '';
-        //no special handling on Darwin for now. ls as place holder
-        if (os.type() === 'Darwin') {
-            rotation_command = 'ls';
-        } else {
-            rotation_command = '/usr/sbin/logrotate /etc/logrotate.d/noobaa';
-        }
-        return promise_utils.exec(rotation_command).then(function() {
-            var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
-            dbg.log0("test_debug_module: log0 should appear in the log");
-            return file_content_verify("text", "test_debug_module: log0 should appear in the log");
-        });
-    });
-
-    mocha.it('should NOT log when level is lower', function() {
+    mocha.it('should log when level is appropriate', async function() {
         var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
-        dbg.log2("test_debug_module: log2 should not appear in the log");
-        return file_content_verify("no_text", "test_debug_module: log2 should not appear in the log");
+        dbg.log0('test_debug_module: log0 should appear in the log');
+        return assert_in_log('test_debug_module: log0 should appear in the log');
     });
 
-    mocha.it('should log after changing level of module', function() {
+    mocha.it('should NOT log when level is lower', async function() {
+        var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
+        dbg.log2('test_debug_module: log2 should not appear in the log');
+        return assert_not_in_log('test_debug_module: log2 should not appear in the log');
+    });
+
+    mocha.it('should log after changing level of module', async function() {
         var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
         dbg.set_level(4);
         var a = {
-            out: "out",
+            out: 'out',
             second: {
-                inner: "inner"
+                inner: 'inner'
             }
         };
-        dbg.log4("test_debug_module: log4 should appear after level change", a);
+        dbg.log4('test_debug_module: log4 should appear after level change', a);
         dbg.set_level(0);
-        return file_content_verify("text", "core.blabla.asd.lll:: test_debug_module: log4 should appear after level change");
+        return assert_in_log('test_debug_module: log4 should appear after level change');
     });
 
-    mocha.it('should log backtrace if asked to', function() {
+    mocha.it('trace0 should log backtrace', async function() {
         var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
-        dbg.log0_withbt("test_debug_module: log0 should appear with backtrace");
-        return file_content_verify("text", "core.blabla.asd.lll:: test_debug_module: log0 should appear with backtrace     at");
+        dbg.trace0('test_debug_module: trace0 should appear with backtrace');
+        return assert_in_log('test_debug_module: trace0 should appear with backtrace     at');
     });
 
-    mocha.it('setting a higher module should affect sub module', function() {
+    mocha.it('setting a higher module should affect sub module', async function() {
         var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
         dbg.set_level(2, 'core');
-        dbg.log2("test_debug_module: log2 setting a higher level module level should affect current");
+        dbg.log2('test_debug_module: log2 setting a higher level module level should affect current');
         dbg.set_level(0, 'core');
-        return file_content_verify("text", "core.blabla.asd.lll:: test_debug_module: log2 setting a higher level module level should affect current");
+        return assert_in_log('test_debug_module: log2 setting a higher level module level should affect current');
     });
 
-    mocha.it('formatted string should be logged correctly (string substitutions)', function() {
+    mocha.it('formatted string should be logged correctly (string substitutions)', async function() {
         var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
         var s1 = 'this';
         var s2 = 'should';
         var s3 = 'expected';
         var d1 = 3;
         var d2 = 2;
-        dbg.log0("%s string substitutions (%d) %s be logged as %s, with two (%d) numbers", s1, d1, s2, s3, d2);
-        return file_content_verify("text", " this string substitutions (3) should be logged as expected, with two (2) numbers");
+        dbg.log0('%s string substitutions (%d) %s be logged as %s, with two (%d) numbers', s1, d1, s2, s3, d2);
+        return assert_in_log('this string substitutions (3) should be logged as expected, with two (2) numbers');
     });
 
-    mocha.it('console various logs should be logged as well', function() {
-        var syslog_levels = ["trace", "log", "info", "error"];
-        return _.reduce(syslog_levels, function(promise, l) {
-            return promise.then(function() {
-                var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
-                _.noop(dbg); // lint unused bypass
-                console[l]("console - %s - should be captured", l);
-                return file_content_verify("text", "CONSOLE:: console - " + l + " - should be captured");
-            });
-        }, P.resolve());
+    mocha.it('console various logs should be logged as well', async function() {
+        for (const l of ['error', 'warn', 'info', 'log', 'trace']) {
+            console[l]('console - %s - should be captured', l);
+            await assert_in_log('console - ' + l + ' - should be captured');
+        }
     });
 
-    mocha.it('fake browser verify logging and console wrapping', function() {
+    mocha.it('fake browser verify logging and console wrapping', async function() {
         var dbg = new DebugModule('/web/noise/noobaa-core/src/blabla.asd/lll.asd');
-        dbg.log0("test_debug_module: browser should appear in the log");
-        return file_content_verify("text", "core.blabla.asd.lll:: test_debug_module: browser should appear in the log");
+        dbg.log0('test_debug_module: browser should appear in the log');
+        return assert_in_log('test_debug_module: browser should appear in the log');
     });
 });
