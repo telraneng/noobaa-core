@@ -96,10 +96,10 @@ Splitter::_next_point(const uint8_t** const p_data, int* const p_len)
     uint8_t byte = 0;
 
     // skip byte scanning as long as below min chunk length
-    if (chunk_pos < min) {
-        data += min - chunk_pos;
-        chunk_pos = min;
-    }
+    // if (chunk_pos < min) {
+    //     data += min - chunk_pos;
+    //     chunk_pos = min;
+    // }
 
     // now the heavy part is to scan byte by byte,
     // update the rolling hash by adding the next byte and popping the old byte,
@@ -110,7 +110,7 @@ Splitter::_next_point(const uint8_t** const p_data, int* const p_len)
         chunk_pos++;
 
         hash = _rabin.update(hash, byte, window_data[window_pos]);
-        if ((hash & avg_chunk_mask) == avg_chunk_val) {
+        if (chunk_pos >= min && (hash & avg_chunk_mask) == avg_chunk_val) {
             boundary = true;
             break;
         }

@@ -5,23 +5,22 @@ console.log('loading .env file');
 require('../../util/dotenv').load();
 
 const CORETEST = 'coretest';
+const SYSTEM = CORETEST;
+const EMAIL = `${CORETEST}@noobaa.com`;
+const PASSWORD = CORETEST;
 process.env.JWT_SECRET = CORETEST;
 process.env.CORETEST_MONGODB_URL = process.env.CORETEST_MONGODB_URL || `mongodb://localhost/${CORETEST}`;
 process.env.MONGODB_URL = process.env.CORETEST_MONGODB_URL;
 
 const config = require('../../../config.js');
-const system_store = require('../../server/system_services/system_store').get_instance();
-
 config.test_mode = true;
 config.NODES_FREE_SPACE_RESERVE = 10 * 1024 * 1024;
 
 const P = require('../../util/promise');
-P.config({
-    longStackTraces: true
-});
+P.config({ longStackTraces: true });
 
 const _ = require('lodash');
-// const util = require('util');
+const util = require('util');
 const mocha = require('mocha');
 const assert = require('assert');
 
@@ -32,8 +31,11 @@ const endpoint = require('../../endpoint/endpoint');
 const server_rpc = require('../../server/server_rpc');
 const node_server = require('../../server/node_services/node_server');
 const mongo_client = require('../../util/mongo_client');
+const system_store = require('../../server/system_services/system_store').get_instance();
 const account_server = require('../../server/system_services/account_server');
 const core_agent_control = require('./core_agent_control');
+
+const async_delay = util.promisify(setTimeout);
 
 if (argv.verbose) {
     dbg.set_level(5, 'core');
@@ -48,10 +50,6 @@ const api_coverage = new Set();
 const rpc_client = server_rpc.rpc.new_client({
     tracker: req => api_coverage.delete(req.srv)
 });
-
-const SYSTEM = CORETEST;
-const EMAIL = `${CORETEST}@noobaa.com`;
-const PASSWORD = CORETEST;
 
 function new_rpc_client() {
     return server_rpc.rpc.new_client(rpc_client.options);
@@ -91,66 +89,60 @@ function setup({ incomplete_rpc_coverage } = {}) {
         n2n_agent: false, // we use n2n_proxy
     });
 
-    function announce(msg) {
+    async function announce(msg) {
         const l = Math.max(80, msg.length + 4);
         console.log('='.repeat(l));
         console.log('=' + ' '.repeat(l - 2) + '=');
         console.log('= ' + msg + ' '.repeat(l - msg.length - 3) + '=');
         console.log('=' + ' '.repeat(l - 2) + '=');
         console.log('='.repeat(l));
-        return P.delay(500);
+        return async_delay(500);
     }
 
-    mocha.before('coretest-before', function() {
+    mocha.before('coretest-before', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
         const start = Date.now();
-        return P.resolve()
-            .then(() => announce('mongo_client connect()'))
-            .then(() => mongo_client.instance().connect('skip_init_db'))
-            .then(() => announce('mongo_client dropDatabase()'))
-            .then(() => mongo_client.instance().db.dropDatabase())
-            .then(() => announce('mongo_client reconnect()'))
-            .then(() => mongo_client.instance().reconnect())
-            .then(() => announce('ensure_support_account()'))
-            .then(() => account_server.ensure_support_account())
-            .then(() => announce('start_http_server'))
-            .then(() => server_rpc.rpc.start_http_server({
-                port: 0,
-                protocol: 'ws:',
-                logging: true,
-                default_handler: endpoint_request_handler,
-            }))
-            .then(http_server_arg => {
-                // the http/ws port is used by the agents
-                http_server = http_server_arg;
-                const http_port = http_server.address().port;
-                base_address = `ws://127.0.0.1:${http_port}`;
-                http_address = `http://127.0.0.1:${http_port}`;
+        await announce('mongo_client connect()');
+        await mongo_client.instance().connect('skip_init_db');
+        await announce('mongo_client dropDatabase()');
+        await mongo_client.instance().db.dropDatabase();
+        await announce('mongo_client reconnect()');
+        await mongo_client.instance().reconnect();
+        await announce('ensure_support_account()');
+        await account_server.ensure_support_account();
+        await announce('start_http_server');
+        http_server = await server_rpc.rpc.start_http_server({
+            port: 0,
+            protocol: 'ws:',
+            logging: true,
+            default_handler: endpoint_request_handler,
+        });
+        // the http/ws port is used by the agents
+        const http_port = http_server.address().port;
+        base_address = `ws://127.0.0.1:${http_port}`;
+        http_address = `http://127.0.0.1:${http_port}`;
 
-                // update the nodes_monitor n2n_rpc to find the base_address correctly for signals
-                node_server.get_local_monitor().n2n_rpc.router.default = base_address;
-                node_server.get_local_monitor().n2n_rpc.router.master = base_address;
-            })
-            .then(() => announce(`base_address ${base_address}`))
-            .then(() => announce('create_system()'))
-            .then(() => rpc_client.system.create_system({
-                activation_code: '123',
-                name: SYSTEM,
-                email: EMAIL,
-                password: PASSWORD,
-            }))
-            .then(res => {
-                rpc_client.options.auth_token = res.token;
-            })
-            .then(() => init_internal_storage(SYSTEM))
-            .then(() => announce('init_test_nodes()'))
-            .delay(3000)
-            .then(() => init_test_nodes(rpc_client, SYSTEM, 10))
-            .then(() => announce(`coretest ready... (took ${((Date.now() - start) / 1000).toFixed(1)} sec)`));
+        // update the nodes_monitor n2n_rpc to find the base_address correctly for signals
+        node_server.get_local_monitor().n2n_rpc.router.default = base_address;
+        node_server.get_local_monitor().n2n_rpc.router.master = base_address;
+        await announce(`base_address ${base_address}`);
+        await announce('create_system()');
+        const { token } = await rpc_client.system.create_system({
+            activation_code: '123',
+            name: SYSTEM,
+            email: EMAIL,
+            password: PASSWORD,
+        });
+        rpc_client.options.auth_token = token;
+        await init_internal_storage(SYSTEM);
+        await announce('init_test_nodes()');
+        await async_delay(3000);
+        await init_test_nodes(rpc_client, SYSTEM, 10);
+        await announce(`coretest ready... (took ${((Date.now() - start) / 1000).toFixed(1)} sec)`);
     });
 
 
-    mocha.after('coretest-after', function() {
+    mocha.after('coretest-after', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
 
         console.log('Database', process.env.CORETEST_MONGODB_URL, 'is intentionally',
@@ -170,52 +162,43 @@ function setup({ incomplete_rpc_coverage } = {}) {
                 }
             }
         }
-        return P.resolve()
-            .then(() => announce('clear_test_nodes()'))
-            .then(() => clear_test_nodes())
-            .delay(1000)
-            .then(() => announce('rpc set_disconnected_state()'))
-            .then(() => server_rpc.rpc.set_disconnected_state(true))
-            .then(() => announce('mongo_client disconnect()'))
-            .then(() => mongo_client.instance().disconnect())
-            .then(() => announce('http_server close()'))
-            .then(() => http_server && http_server.close())
-            .then(() => announce('coretest done ...'))
-            .then(() => setInterval(() => {
-                console.log('process._getActiveRequests', process._getActiveRequests());
-                console.log('process._getActiveHandles', process._getActiveHandles());
-            }, 30000).unref());
+        await announce('clear_test_nodes()');
+        await clear_test_nodes();
+        await async_delay(1000);
+        await announce('rpc set_disconnected_state()');
+        await server_rpc.rpc.set_disconnected_state(true);
+        await announce('mongo_client disconnect()');
+        await mongo_client.instance().disconnect();
+        await announce('http_server close()');
+        if (http_server) http_server.close();
+        await announce('coretest done ...');
+        setInterval(() => {
+            console.log('process._getActiveRequests', process._getActiveRequests());
+            console.log('process._getActiveHandles', process._getActiveHandles());
+        }, 30000).unref();
     });
 
 }
 
 // create some test agents named 0, 1, 2, ..., count
-function init_test_nodes(client, system, count) {
-    return P.resolve()
-        .then(() => node_server.start_monitor())
-        .then(() => client.auth.create_auth({
-            role: 'create_node',
-            system: system
-        }))
-        .then(res => {
-            const create_node_token = res.token;
-            core_agent_control.use_local_agents(base_address, create_node_token);
-            core_agent_control.create_agent(count);
-            return core_agent_control.start_all_agents();
-        })
-        .then(() => console.log(`created ${count} agents`))
-        .then(() => node_server.sync_monitor_to_store())
-        .then(() => P.delay(2000))
-        .then(() => node_server.sync_monitor_to_store());
+async function init_test_nodes(client, system, count) {
+    await node_server.start_monitor();
+    const { token: create_node_token } = await client.auth.create_auth({ role: 'create_node', system });
+    core_agent_control.use_local_agents(base_address, create_node_token);
+    core_agent_control.create_agent(count);
+    await core_agent_control.start_all_agents();
+    console.log(`created ${count} agents`);
+    await node_server.sync_monitor_to_store();
+    await async_delay(2000);
+    await node_server.sync_monitor_to_store();
 }
 
 // delete all test agents and nodes
-function clear_test_nodes() {
-    return P.resolve()
-        .then(() => console.log('CLEANING AGENTS'))
-        .then(() => core_agent_control.cleanup_agents())
-        .then(() => console.log('STOP MONITOR'))
-        .then(() => node_server.stop_monitor('force_close_n2n'));
+async function clear_test_nodes() {
+    console.log('CLEANING AGENTS');
+    await core_agent_control.cleanup_agents();
+    console.log('STOP MONITOR');
+    await node_server.stop_monitor('force_close_n2n');
 }
 
 function get_http_address() {
@@ -370,22 +353,21 @@ function _describe_mapper_test_case(test_case, func) {
 
         if (bucket_name) {
 
-            mocha.before(function() {
+            mocha.before(async function() {
                 this.timeout(600000); // eslint-disable-line no-invalid-this
-                return P.resolve()
-                    .then(() => rpc_client.bucket.create_bucket({
-                        name: bucket_name,
-                        chunk_coder_config,
-                        // using small chunks to make the tests lighter
-                        chunk_split_config: {
-                            avg_chunk: 100,
-                            delta_chunk: 50,
-                        },
-                    }));
+                await rpc_client.bucket.create_bucket({
+                    name: bucket_name,
+                    chunk_coder_config,
+                    // using small chunks to make the tests lighter
+                    chunk_split_config: {
+                        avg_chunk: 100,
+                        delta_chunk: 50,
+                    },
+                });
             });
 
             // deleting the objects to free memory because the test uses block_store_mem.js
-            mocha.after(function() {
+            mocha.after(async function() {
                 this.timeout(600000); // eslint-disable-line no-invalid-this
                 return P.resolve()
                     .then(() => rpc_client.object.list_objects_admin({ bucket: bucket_name }))

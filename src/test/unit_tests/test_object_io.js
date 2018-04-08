@@ -12,7 +12,6 @@ const assert = require('assert');
 const stream = require('stream');
 
 const ObjectIO = require('../../sdk/object_io');
-const promise_utils = require('../../util/promise_utils');
 
 const { rpc_client } = coretest;
 const object_io = new ObjectIO();
@@ -80,16 +79,16 @@ coretest.describe_mapper_test_case({
 
     mocha.it('upload_and_verify', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
-        await promise_utils.loop(small_loops, () => upload_and_verify(61));
-        await promise_utils.loop(medium_loops, () => upload_and_verify(4015));
-        await promise_utils.loop(big_loops, () => upload_and_verify(10326));
+        for (let i = 0; i < small_loops; ++i) await upload_and_verify(61);
+        for (let i = 0; i < medium_loops; ++i) await upload_and_verify(4015);
+        for (let i = 0; i < big_loops; ++i) await upload_and_verify(10326);
     });
 
     mocha.it('multipart_upload_and_verify', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
-        await promise_utils.loop(small_loops, () => multipart_upload_and_verify(45, 7));
-        await promise_utils.loop(medium_loops, () => multipart_upload_and_verify(3245, 5));
-        await promise_utils.loop(big_loops, () => multipart_upload_and_verify(7924, 3));
+        for (let i = 0; i < small_loops; ++i) await multipart_upload_and_verify(45, 7);
+        for (let i = 0; i < medium_loops; ++i) await multipart_upload_and_verify(3245, 5);
+        for (let i = 0; i < big_loops; ++i) await multipart_upload_and_verify(7924, 3);
     });
 
 

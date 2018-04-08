@@ -593,7 +593,11 @@ function select_tier_for_write(tiering, tiering_status) {
 
 function is_chunk_good_for_dedup(chunk, tiering, tiering_status) {
     const mapping = map_chunk(chunk, tiering, tiering_status);
-    return mapping.accessible && !mapping.allocations;
+    const res = mapping.accessible && !mapping.allocations;
+    if (!res) {
+        dbg.log0('NOT GOOD FOR DEDUP', chunk, mapping);
+    }
+    return res;
 }
 
 function assign_node_to_block(block, node, system_id) {
