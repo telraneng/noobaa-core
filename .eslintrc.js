@@ -145,8 +145,6 @@ module.exports = {
         // instead of expression (foo = function() {})
         'func-style': ['error', 'declaration', { allowArrowFunctions: true }],
 
-        'lines-between-class-members': ['error', 'always', { exceptAfterSingleLine: true }],
-
         // use only x|0 for int casting, but avoid other bitwise operators
         'no-bitwise': ['error', { int32Hint: true }],
 
@@ -221,6 +219,7 @@ module.exports = {
 
         // directive means 'use strict', we don't enforce lines around
         'lines-around-directive': 'off',
+        'lines-between-class-members': 'off',
 
         // we don't enforce comments to above/after the line, both work ok
         'line-comment-position': 'off',
