@@ -7,9 +7,9 @@ namespace noobaa
 {
 
 // See https://web.eecs.utk.edu/~plank/plank/papers/CS-07-593/primitive-polynomial-table.txt
-#define NB_RABIN_POLY 011
-#define NB_RABIN_DEGREE 31
-#define NB_RABIN_WINDOW_LEN 64
+#define NB_RABIN_POLY 021
+#define NB_RABIN_DEGREE 39
+#define NB_RABIN_WINDOW_LEN 16
 
 // intialize rabin instance statically for all splitter instances
 // we set the rabin properties on compile time for best performance
@@ -93,32 +93,26 @@ Splitter::_next_point(const uint8_t** const p_data, int* const p_len)
 
     const uint8_t* data = *p_data;
     bool boundary = false;
-    uint8_t byte = 0;
 
     // skip byte scanning as long as below min chunk length
-    // if (chunk_pos < min) {
-    //     data += min - chunk_pos;
-    //     chunk_pos = min;
-    // }
+    if (chunk_pos < min) {
+        data += min - chunk_pos;
+        chunk_pos = min;
+    }
 
     // now the heavy part is to scan byte by byte,
     // update the rolling hash by adding the next byte and popping the old byte,
     // and check if the hash marks a chunk boundary.
     while (chunk_pos < max) {
-        byte = *data;
-        data++;
+        hash = _rabin.update(hash, *data, window_data[window_pos]);
+        window_data[window_pos] = *data;
+        window_pos++;
         chunk_pos++;
-
-        hash = _rabin.update(hash, byte, window_data[window_pos]);
-        if (chunk_pos >= min && (hash & avg_chunk_mask) == avg_chunk_val) {
+        data++;
+        if (window_pos >= window_len) window_pos = 0;
+        if ((hash & avg_chunk_mask) == avg_chunk_val) {
             boundary = true;
             break;
-        }
-
-        window_data[window_pos] = byte;
-        window_pos++;
-        if (window_pos >= window_len) {
-            window_pos = 0;
         }
     }
 

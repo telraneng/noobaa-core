@@ -38,29 +38,33 @@ mocha.describe('ChunkSplitter', function() {
     mocha.it('splits almost the same when pushing bytes at the start', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
 
-        const avg_chunk = 4000;
-        const delta_chunk = 100;
+        const num_chunks = 5000;
+        const avg_chunk = 4 * 1024;
+        const delta_chunk = avg_chunk / 4;
 
         // using fixed seed for consistent bytes generator
         const seed = sha('Intelligence is the ability to adapt to change');
         const generator = crypto.createCipheriv('aes-128-gcm', seed.slice(0, 16), seed.slice(16, 24));
-        const base_data = generator.update(Buffer.alloc(30 * avg_chunk));
+        const base_data = generator.update(Buffer.alloc(num_chunks * avg_chunk));
         const base = await split({ avg_chunk, delta_chunk, data: base_data });
 
-        let data_size = base.data_size;
-        let storage_size = base.storage_size;
+        let global_data_size = 0;
+        let global_dedup_size = 0;
 
-        for (let i = 0; i < avg_chunk; ++i) {
+        for (let i = 1; i < avg_chunk; ++i) {
             const prefix = generator.update(Buffer.alloc(i));
             const chunks = await split({ avg_chunk, delta_chunk, data: [prefix, base_data] });
-            const storage_size_vs_base = _.sumBy(_.difference(chunks, base), 'size');
-            data_size += chunks.data_size;
-            storage_size += chunks.storage_size;
-            console.log(`${i} storage/data ratio (lower is better):`,
-                `new vs. base ${percent(storage_size_vs_base, chunks.data_size)}`,
-                `new vs. all ${chunks.storage_percent}`,
-                `total ${percent(storage_size, data_size)}`
+            const dedup_vs_base = _.sumBy(_.intersection(chunks, base), 'size');
+            global_data_size += chunks.data_size;
+            global_dedup_size += chunks.dedup_size;
+            console.log(`prefix ${i} - dedup ratio (higher is better) |`,
+                `base = ${(100 * dedup_vs_base / chunks.data_size).toFixed(1).padStart(5)}% |`,
+                `any = ${(100 * chunks.dedup_size / chunks.data_size).toFixed(1).padStart(5)}% |`,
+                `global = ${(100 * global_dedup_size / global_data_size).toFixed(1).padStart(5)}% |`,
+                `avg chunk size = ${(chunks.data_size / chunks.length).toFixed(1).padStart(8)} |`,
+                // `chunks ${chunks.map(c => c.size).slice(0, 100)}`
             );
+            assert(dedup_vs_base / chunks.data_size >= 0.1, 'added storage vs. base is too high');
         }
     });
 
@@ -68,7 +72,7 @@ mocha.describe('ChunkSplitter', function() {
         return new Promise((resolve, reject) => {
             const chunks = [];
             chunks.data_size = 0;
-            chunks.storage_size = 0;
+            chunks.dedup_size = 0;
             const splitter = new ChunkSplitter({
                 watermark: 100,
                 calc_md5: true,
@@ -82,18 +86,15 @@ mocha.describe('ChunkSplitter', function() {
                 if (dedup) {
                     dedup.refs += 1;
                     chunks.push(dedup);
+                    chunks.dedup_size += chunk.size;
                 } else {
                     chunk.refs = 1;
                     chunks.push(chunk);
-                    chunks.storage_size += chunk.size;
                     dedup_map.set(chunk.hash, chunk);
                 }
             });
             splitter.once('error', reject);
-            splitter.once('end', () => {
-                chunks.storage_percent = percent(chunks.storage_size, chunks.data_size); // lower is better
-                return resolve(chunks);
-            });
+            splitter.once('end', () => resolve(chunks));
             if (Array.isArray(data)) {
                 for (const d of data) splitter.write(d);
                 splitter.end();
@@ -107,11 +108,6 @@ mocha.describe('ChunkSplitter', function() {
     }
 
 });
-
-
-function percent(a, b) {
-    return (100 * a / b).toFixed(1) + '%';
-}
 
 function sha(data) {
     const h = crypto.createHash('sha512');
