@@ -209,6 +209,9 @@ module.exports = {
         // directive means 'use strict', we don't enforce lines around
         'lines-around-directive': 'off',
 
+        // we should write useful comments though
+        'lines-around-comment': 'off',
+
         // we don't enforce comments to above/after the line, both work ok
         'line-comment-position': 'off',
 
