@@ -1644,10 +1644,8 @@ function sort_list_uploads_with_delimiter(a, b) {
     if (a.key < b.key) return -1;
     if (a.key > b.key) return 1;
     // upload_started is sorted in ascending order
-    const a_upload = a.upload_started ? a.upload_started.getTimestamp().getTime() : 0;
-    const b_upload = b.upload_started ? b.upload_started.getTimestamp().getTime() : 0;
-    if (a_upload < b_upload) return -1;
-    if (a_upload > b_upload) return 1;
+    if (a.upload_started < b.upload_started) return -1;
+    if (a.upload_started > b.upload_started) return 1;
     return 0;
 }
 
