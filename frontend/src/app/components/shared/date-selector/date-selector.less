@@ -1,0 +1,26 @@
+/* Copyright (C) 2016 NooBaa */
+
+date-selector {
+    display: block;
+
+    .date-wrapper {
+        position: relative;
+
+        &:focus .date-calendar {
+            display: initial;
+        }
+    }
+
+    .date-text {
+        margin: 0;
+    }
+
+    .date-calendar {
+        position: absolute;
+        display: none;
+        margin: 0;
+        z-index: 999;
+        top: 100%;
+        right: 0;
+    }
+}

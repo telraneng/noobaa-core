@@ -323,6 +323,8 @@ import resourceConnectedBucketsForm from './shared/resource-connected-buckets-fo
 import resourceDistributionTable from './shared/resource-distribution-table/resource-distribution-table';
 import resourceDistributionChart from './shared/resource-distribution-chart/resource-distribution-chart';
 import hostPartsTable from './shared/host-parts-table/host-parts-table';
+import calendar from './shared/calendar/calendar';
+import dateSelector from './shared/date-selector/date-selector';
 /** INJECT:shared.import **/
 
 // Register the components with knockout component container.
@@ -601,6 +603,8 @@ export default function register(ko, services) {
         resourceDistributionTable,
         resourceDistributionChart,
         hostPartsTable,
+        calendar,
+        dateSelector,
         /** INJECT:shared.list **/
 
         // An empty component used for app/data loading periods

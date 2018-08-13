@@ -1,0 +1,41 @@
+<!-- Copyright (C) 2016 NooBaa -->
+
+<div class="column pad-half alt-bg text-center remark">
+    <div class="row content-middle highlight cal-date-row push-both-half">
+        <button class="icon-btn push-prev-half no-outline"
+            tabindex="-1"
+            ko.click="onPrevMonth"
+        >
+            <svg-icon params="name: 'chevron'"
+                class="icon-small rotate deg90 highlight"
+            ></svg-icon>
+        </button>
+        <span class="greedy">
+            {{month}} {{year}}
+        </span>
+        <button class="icon-btn push-next-half no-outline"
+            tabindex="-1"
+            ko.click="onNextMonth"
+        >
+            <svg-icon params="name: 'chevron'"
+                class="icon-small rotate deg-90 highlight"
+            ></svg-icon>
+        </button>
+    </div>
+    <hr />
+    <ul class="list-no-style highlight cal-grid" ko.forEach="weekDays">
+        <li ko.text="$data"></li>
+    </ul>
+    <ul class="list-no-style cal-grid" ko.forEach="dates">
+        <li>
+            <button class="btn-flat no-outline cal-date"
+                tabindex="-1"
+                ko.text="text"
+                ko.css.disabled="disabled"
+                ko.css.selected="$component.value.eq(date)"
+                ko.click="() => $component.onDate(date)"
+            ></button>
+        </li>
+    </ul>
+</div>
+

@@ -1,0 +1,19 @@
+<!-- Copyright (C) 2016 NooBaa -->
+
+<div class="date-wrapper column no-outline"
+    tabindex="0"
+    ko.hasFocus="focus()"
+    ko.css.placeholder="showingPlaceholder"
+    ko.childEvent.focus="onFocus"
+    ko.childEvent.blur="onBlur"
+>
+    <output class="no-wrap input date-text"
+        ko.value="text"
+        ko.css.focus="focus"
+    ></output>
+    <calendar class="date-calendar"
+        params="value: value"
+    ></calendar>
+</div>
+
+
