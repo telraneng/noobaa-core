@@ -57,6 +57,7 @@ async function delete_blocks_from_nodes(blocks) {
         // This is not critical like deleted which alters the md_aggregator calculations
         await MDStore.instance().update_blocks_by_ids(block_ids, { reclaimed: new Date() });
     } catch (err) {
+        // this is ok because agent_blocks_reclaimer will pick up and followup...
         dbg.warn('delete_blocks_from_nodes: Failed to mark blocks as reclaimed', err);
     }
 }

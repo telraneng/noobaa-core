@@ -191,7 +191,7 @@ class LicenseScanner extends events.EventEmitter {
                 homepage = '',
                 author = ''
             }) => {
-                url = url || homepage || (repository && repository.url) || '';
+                url = url || homepage || (repository && repository.url) || repository || '';
                 license = license || licenses;
                 if (!license && !url && !author) {
                     // empty package, just a folder with package.json but no info or license,
@@ -291,6 +291,9 @@ function get_license_type(name) {
     if (/^zlib/i.test(name)) return PERMISSIVE_TYPE;
     // Public domain
     if (/^public.*domain/i.test(name)) return PERMISSIVE_TYPE;
+    // Creative Commons
+    if (/^cc0/i.test(name)) return PERMISSIVE_TYPE;
+    if (/^cc-by-3.0/i.test(name)) return PERMISSIVE_TYPE;
     // ARTISTIC-2.0
     // ARTISTIC LICENSE 2.0
     if (/^artistic/i.test(name)) return PERMISSIVE_TYPE;
@@ -313,5 +316,5 @@ exports.LicenseDetector = LicenseDetector;
 exports.LicenseScanner = LicenseScanner;
 exports.get_license_type = get_license_type;
 exports.PROPRIETARY_TYPE = PROPRIETARY_TYPE;
-exports.PROPRIETARY_TYPE = PERMISSIVE_TYPE;
-exports.PROPRIETARY_TYPE = GPL_TYPE;
+exports.PERMISSIVE_TYPE = PERMISSIVE_TYPE;
+exports.GPL_TYPE = GPL_TYPE;
