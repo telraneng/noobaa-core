@@ -699,7 +699,8 @@ function get_block_info(chunk, frag, block, adminfo) {
 
 function get_alloc_info(alloc) {
     return {
-        mirror_group: alloc.mirror_group
+        mirror_group: alloc.mirror_group,
+        block: alloc.block,
     };
 }
 
