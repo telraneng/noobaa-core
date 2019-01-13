@@ -193,7 +193,6 @@ class BlockStoreBase {
 
     _check_write_space(data_length) {
         const required_space = data_length + (1024 * 1024); // require some spare space
-        dbg.log0('ZZZZ write_block', this.usage_limit, '-', this._usage.size, '<', required_space);
         if (this.usage_limit - this._usage.size < required_space) {
             throw new RpcError('NO_BLOCK_STORE_SPACE', 'used space exceeded the total capacity of ' +
                 this.usage_limit + ' bytes');

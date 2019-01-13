@@ -761,7 +761,7 @@ class MDStore {
             deleted: { $lt: new Date(max_delete_time) },
         }, {
             limit: Math.min(limit, 1000),
-            fields: {
+            projection: {
                 _id: 1,
                 deleted: 1
             }
@@ -950,7 +950,7 @@ class MDStore {
         return this._parts.col().find({
                 obj: obj._id,
             }, {
-                fields: {
+                projection: {
                     _id: 0,
                     chunk: 1
                 }
@@ -974,7 +974,7 @@ class MDStore {
                 chunk: { $in: chunk_ids },
                 deleted: null,
             }, {
-                fields: {
+                projection: {
                     _id: 0,
                     chunk: 1
                 }
@@ -1161,7 +1161,7 @@ class MDStore {
                     $in: buckets
                 }
             }), {
-                fields: {
+                projection: {
                     _id: 1
                 },
                 sort: {
@@ -1183,7 +1183,7 @@ class MDStore {
                 } : undefined,
                 deleted: null,
             }), {
-                fields: {
+                projection: {
                     _id: 1
                 },
                 sort: {
@@ -1207,7 +1207,7 @@ class MDStore {
                 tier,
                 deleted: null,
             }, {
-                fields: { _id: 1 },
+                projection: { _id: 1 },
                 hint: 'tiering_index',
                 sort,
                 limit,
@@ -1313,7 +1313,7 @@ class MDStore {
         return this._chunks.col().find({
                 dedup_key: marker ? { $lt: marker } : { $exists: true }
             }, {
-                fields: {
+                projection: {
                     _id: 1,
                     dedup_key: 1
                 },
@@ -1337,7 +1337,7 @@ class MDStore {
         };
         return this._chunks.col().find(query, {
                 limit: Math.min(limit, 1000),
-                fields: {
+                projection: {
                     _id: 1,
                     deleted: 1
                 }
@@ -1462,7 +1462,7 @@ class MDStore {
                 } : undefined,
                 deleted: null,
             }), {
-                fields: {
+                projection: {
                     _id: 1,
                     chunk: 1,
                     size: 1
@@ -1485,7 +1485,7 @@ class MDStore {
                 node: { $in: node_ids },
                 deleted: null,
             }), {
-                fields: {
+                projection: {
                     _id: 1,
                     chunk: 1,
                     size: 1
@@ -1597,7 +1597,7 @@ class MDStore {
         };
         return this._blocks.col().find(query, {
                 limit: Math.min(limit, 1000),
-                fields: {
+                projection: {
                     _id: 1,
                     deleted: 1
                 }

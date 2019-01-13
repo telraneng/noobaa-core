@@ -410,26 +410,6 @@ class TierMapper {
 
         return tier_mapping;
     }
-
-    /**
-     * Compare tier based on the availability of online resources on that tier, not space.
-     * This will choose a lower order tier even if there is no space but in that case 
-     * space can be pushed out to next tier.
-     * 
-     * @param {TierMapper} mapper1 The first tier to compare
-     * @param {TierMapper} mapper2 The second tier to compare
-     * @returns >0 if (mapper1,mapping1) is best, <0 if (mapper2,mapping2) is best.
-     */
-    static compare_tier(mapper1, mapper2) {
-        const { online: online1, order: order1 } = mapper1;
-        const { online: online2, order: order2 } = mapper2;
-
-        if (order1 <= order2) {
-            return online1 ? -1 : 1;
-        } else {
-            return online2 ? 1 : -1;
-        }
-    }
 }
 
 
@@ -469,18 +449,19 @@ class TieringMapper {
         return tier_mapper.map_tier(chunk_mapper);
     }
 
-    select_tier_for_write(prev_tier_id) {
+    select_tier_for_write(start_tier_order) {
         const { tier_mappers } = this;
         let best_mapper;
-        let start_index = 0;
-        if (prev_tier_id) {
-            const index = _.findIndex(tier_mappers, t => String(t.tier._id) === String(prev_tier_id));
-            if (index < 0) throw new Error('Could not find tier ' + prev_tier_id + ' in bucket');
-            start_index = index + 1;
-        }
-        for (let i = start_index; i < tier_mappers.length; ++i) {
-            const tier_mapper = tier_mappers[i];
-            if (!best_mapper || TierMapper.compare_tier(best_mapper, tier_mapper) > 0) {
+        for (const tier_mapper of tier_mappers) {
+            if (start_tier_order >= 0 && tier_mapper.order < start_tier_order) {
+                continue;
+            }
+            if (tier_mapper.online) {
+                best_mapper = tier_mapper;
+                break;
+            }
+            if (!best_mapper) {
+                // set a fallback
                 best_mapper = tier_mapper;
             }
         }
@@ -544,17 +525,16 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
     return mapping;
 }
 
-function select_tier_for_write(tiering, tiering_status, prev_tier_id) {
+function select_tier_for_write(tiering, tiering_status, start_tier_order) {
     const tiering_mapper = _get_cached_tiering_mapper(tiering);
     tiering_mapper.update_status(tiering_status);
-    const tier_mapper = tiering_mapper.select_tier_for_write(prev_tier_id);
+    const tier_mapper = tiering_mapper.select_tier_for_write(start_tier_order);
     return tier_mapper && tier_mapper.tier;
 }
 
-function is_chunk_good_for_dedup(chunk, tiering, tiering_status) {
+function is_chunk_good_for_dedup(chunk) {
     if (!chunk.tier._id) return false; // chunk tier was deleted so will need to be reallocated
-    const mapping = map_chunk(chunk, chunk.tier, tiering, tiering_status);
-    return mapping.accessible && !mapping.allocations;
+    return chunk.mapping.accessible && !chunk.mapping.allocations;
 }
 
 function assign_node_to_block(block, node, system_id) {
@@ -595,12 +575,13 @@ function get_part_info(part, adminfo, tiering_status, location_info) {
 }
 
 function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
-    let allocations_by_frag_id;
-    let deletions_by_frag_id;
-    let future_deletions_by_frag_id;
+    const bucket = system_store.data.get_by_id(chunk.bucket);
+    const mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status);
+    const allocations_by_frag_id = _.groupBy(mapping.allocations, allocation => String(allocation.frag._id));
+    const deletions_by_frag_id = _.groupBy(mapping.deletions, deletion => String(deletion.frag));
+    const future_deletions_by_frag_id = _.groupBy(mapping.future_deletions, deletion => String(deletion.frag));
+    const blocks_by_frag_id = _.groupBy(chunk.blocks, 'frag');
     if (adminfo) {
-        const bucket = system_store.data.get_by_id(chunk.bucket);
-        const mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status);
         if (!mapping.accessible) {
             adminfo = { health: 'unavailable' };
         } else if (mapping.allocations) {
@@ -608,13 +589,13 @@ function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
         } else {
             adminfo = { health: 'available' };
         }
-        allocations_by_frag_id = _.groupBy(mapping.allocations, allocation => String(allocation.frag._id));
-        deletions_by_frag_id = _.groupBy(mapping.deletions, deletion => String(deletion.frag));
-        future_deletions_by_frag_id = _.groupBy(mapping.future_deletions, deletion => String(deletion.frag));
     }
-    const blocks_by_frag_id = _.groupBy(chunk.blocks, 'frag');
     return {
-        tier: chunk.tier.name,
+        _id: chunk._id,
+        bucket: bucket._id,
+        tier: chunk.tier._id,
+        dup_chunk: chunk.dup_chunk,
+        missing_frags: mapping.missing_frags,
         chunk_coder_config: chunk.chunk_coder_config,
         size: chunk.size,
         frag_size: chunk.frag_size,
@@ -642,6 +623,7 @@ function get_frag_info(chunk, frag, blocks, mapping, adminfo, location_info) {
     // TODO GUY OPTIMIZE what about load balancing - maybe random the order of good blocks
     if (blocks) blocks.sort(location_info ? _block_sorter_local(location_info) : _block_sorter_basic);
     return {
+        _id: frag._id,
         data_index: frag.data_index,
         parity_index: frag.parity_index,
         lrc_index: frag.lrc_index,

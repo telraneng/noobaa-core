@@ -51,7 +51,7 @@ module.exports = {
                 required: ['obj_id', 'chunk_split_config', 'chunk_coder_config'],
                 properties: {
                     obj_id: { objectid: true },
-                    tier: { type: 'string' },
+                    tier: { objectid: true },
                     chunk_split_config: { $ref: 'common_api#/definitions/chunk_split_config' },
                     chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 }
@@ -193,7 +193,7 @@ module.exports = {
                 required: ['multipart_id', 'chunk_split_config', 'chunk_coder_config'],
                 properties: {
                     multipart_id: { objectid: true },
-                    tier: { type: 'string' },
+                    tier: { objectid: true },
                     chunk_split_config: { $ref: 'common_api#/definitions/chunk_split_config' },
                     chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 }
@@ -340,7 +340,7 @@ module.exports = {
             }
         },
 
-        get_mapping_instructions: {
+        get_mapping: {
             method: 'POST',
             params: {
                 type: 'object',
@@ -348,10 +348,11 @@ module.exports = {
                 properties: {
                     chunks: {
                         type: 'array',
-                        items: { $ref: '#/definitions/chunks_info' }
+                        items: { $ref: '#/definitions/chunk_info' }
                     },
                     location_info: { $ref: 'common_api#/definitions/location_info' },
-                    move_to_tier: { type: 'string' },
+                    move_to_tier: { objectid: true },
+                    check_dups: { type: 'boolean' },
                 },
             },
             reply: {
@@ -369,32 +370,22 @@ module.exports = {
             }
         },
 
-        finalize_object_parts: {
+        put_mapping: {
             method: 'PUT',
             params: {
                 type: 'object',
-                required: [
-                    'obj_id',
-                    'bucket',
-                    'key',
-                    'parts'
-                ],
+                required: ['chunks'],
                 properties: {
-                    obj_id: {
-                        objectid: true
-                    },
-                    bucket: {
-                        type: 'string',
-                    },
-                    key: {
-                        type: 'string',
+                    chunks: {
+                        type: 'array',
+                        items: { $ref: '#/definitions/chunk_info' }
                     },
                     parts: {
                         type: 'array',
-                        items: {
-                            $ref: '#/definitions/part_info'
-                        }
-                    }
+                        items: { $ref: '#/definitions/part_info' }
+                    },
+                    location_info: { $ref: 'common_api#/definitions/location_info' },
+                    move_to_tier: { objectid: true },
                 },
             },
             auth: {
@@ -1253,12 +1244,10 @@ module.exports = {
                 chunk_offset: {
                     type: 'integer',
                 },
-                chunk: {
-                    $ref: '#/definitions/chunk_info',
-                },
-                chunk_id: {
-                    objectid: true
-                },
+                // TODO remove chunk but after adjusting read_object/node/host_mapping
+                chunk: { $ref: '#/definitions/chunk_info' },
+                chunk_id: { objectid: true },
+                obj_id: { objectid: true },
             }
         },
 
@@ -1269,7 +1258,11 @@ module.exports = {
                 'frags'
             ],
             properties: {
-                tier: { type: 'string' },
+                _id: { objectid: true },
+                bucket: { objectid: true },
+                tier: { objectid: true },
+                dup_chunk: { objectid: true },
+                missing_frags: { type: 'boolean' },
                 chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 size: { type: 'integer' },
                 frag_size: { type: 'integer' },
@@ -1280,9 +1273,11 @@ module.exports = {
                 cipher_auth_tag_b64: { type: 'string' },
                 frags: {
                     type: 'array',
-                    items: {
-                        $ref: '#/definitions/frag_info',
-                    }
+                    items: { $ref: '#/definitions/frag_info' }
+                },
+                parts: {
+                    type: 'array',
+                    items: { $ref: '#/definitions/part_info' }
                 },
                 adminfo: {
                     type: 'object',
@@ -1300,6 +1295,7 @@ module.exports = {
         frag_info: {
             type: 'object',
             properties: {
+                _id: { objectid: true },
                 data_index: { type: 'integer' },
                 parity_index: { type: 'integer' },
                 lrc_index: { type: 'integer' },

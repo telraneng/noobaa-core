@@ -736,7 +736,7 @@ class SystemStore extends EventEmitter {
         };
         return collection.find(query, {
                 limit: Math.min(limit, 1000),
-                fields: {
+                projection: {
                     _id: 1,
                     deleted: 1
                 }

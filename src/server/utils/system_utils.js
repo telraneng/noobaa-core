@@ -34,6 +34,9 @@ function get_bucket_quota_usage_percent(bucket, bucket_quota) {
 }
 
 function prepare_chunk_for_mapping(chunk) {
+    if (chunk.bucket && !chunk.bucket._id) {
+        chunk.bucket = system_store.data.get_by_id(chunk.bucket);
+    }
     if (chunk.tier && !chunk.tier.chunk_config) {
         chunk.tier = system_store.data.get_by_id(chunk.tier);
     }
