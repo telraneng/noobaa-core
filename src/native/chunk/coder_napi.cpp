@@ -191,7 +191,7 @@ _nb_coder_load_chunk(napi_env env, napi_value v_chunk, struct NB_Coder_Chunk* ch
                 nb_napi_get_int(env, v_frag, "data_index", &f->data_index);
                 nb_napi_get_int(env, v_frag, "parity_index", &f->parity_index);
                 nb_napi_get_int(env, v_frag, "lrc_index", &f->lrc_index);
-                nb_napi_get_bufs(env, v_frag, "block", &f->block);
+                nb_napi_get_bufs(env, v_frag, "data", &f->block);
                 nb_napi_get_buf_b64(env, v_frag, "digest_b64", &f->digest);
             }
         }
@@ -308,7 +308,7 @@ _nb_coder_update_chunk(
             if (f->data_index >= 0) nb_napi_set_int(env, v_frag, "data_index", f->data_index);
             if (f->parity_index >= 0) nb_napi_set_int(env, v_frag, "parity_index", f->parity_index);
             if (f->lrc_index >= 0) nb_napi_set_int(env, v_frag, "lrc_index", f->lrc_index);
-            nb_napi_set_bufs(env, v_frag, "block", &f->block);
+            nb_napi_set_bufs(env, v_frag, "data", &f->block);
             if (chunk->frag_digest_type[0]) {
                 nb_napi_set_buf_b64(env, v_frag, "digest_b64", &f->digest);
             }

@@ -7,6 +7,7 @@ coretest.setup();
 
 const _ = require('lodash');
 const mocha = require('mocha');
+const util = require('util');
 const crypto = require('crypto');
 const assert = require('assert');
 const stream = require('stream');
@@ -192,11 +193,15 @@ coretest.describe_mapper_test_case({
             assert.strictEqual(start, pos);
             pos = end;
             assert.strictEqual(frags.length, total_frags);
-            _.forEach(frags, frag => assert.strictEqual(frag.blocks.length, replicas));
+            for (const frag of frags) {
+                assert.strictEqual(frag.blocks.length, replicas, util.inspect(frag));
+            }
             // check blocks don't repeat in the same chunk
             const part_blocks = _.flatMap(frags, 'blocks');
             const blocks_per_node = _.groupBy(part_blocks, block => block.adminfo.node_name);
-            _.forEach(blocks_per_node, (b, node_name) => assert.strictEqual(b.length, 1));
+            for (const blocks of Object.values(blocks_per_node)) {
+                assert.strictEqual(blocks.length, 1);
+            }
         }
         assert.strictEqual(pos, size);
     }

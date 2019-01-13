@@ -1,0 +1,31 @@
+{
+    "include": [
+        "src/sdk/map*",
+        "src/sdk/object*",
+        "src/sdk/nb.d.ts", 
+        "src/server/object_services/*",
+    ],
+    "exclude": [
+    ],
+    "compilerOptions": {
+        "target": "es2018",
+        "module": "commonjs",
+        "moduleResolution": "node",
+
+        // Compile and check also javascript files
+        "allowJs": true,
+        "checkJs": true,
+
+        // noEmit means we are not really saving the output
+        // we only run to do compile time checks
+        "noEmit": true,
+
+        // noResolve does not follow require/import 
+        // so only included files will be compiled/checked
+        // we use this but only from our npm scripts so vscode will resolve other files
+        // "noResolve": true,
+
+        // Allows to require json files
+        "resolveJsonModule": true
+    }
+}

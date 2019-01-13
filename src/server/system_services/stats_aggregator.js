@@ -683,13 +683,13 @@ function background_worker() {
 
 async function _notify_latest_version() {
     try {
-        const results = await P.fromCallback(callback => google_storage.objects.list({
+        const results = await google_storage.objects.list({
             bucket: 'noobaa-fe-assets',
             prefix: 'release-notes/',
             delimiter: '/',
-        }, callback));
+        });
 
-        const items = results.items;
+        const items = results.data.items;
         const [current_major, current_minor, current_patch] = pkg.version.split('-')[0].split('.').map(str => Number(str));
         const current_val = (current_major * 10000) + (current_minor * 100) + current_patch;
         const un_sorted_files = _.compact(items.map(fl => fl.name

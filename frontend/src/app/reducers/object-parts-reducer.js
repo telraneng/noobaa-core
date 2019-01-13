@@ -77,7 +77,7 @@ function _queryMatch(q1, q2) {
         q1.key === q2.key &&
         q1.version === q2.version &&
         q1.limit === q2.limit &&
-        q1.skip  === q2.skip;
+        q1.skip === q2.skip;
 }
 
 function _mapPart(part) {
@@ -98,7 +98,7 @@ function _mapPartBlocks(part, resiliency) {
 
         const { deletions = [], future_deletions = [] } = frag;
         const deletionsSet = new Set(
-            [ ...deletions, ...future_deletions ].map(del => del.block_id)
+            [...deletions, ...future_deletions].map(del => del.block_id)
         );
 
         const allocations = frag.allocations.map(alloc => {

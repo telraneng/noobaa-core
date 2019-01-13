@@ -169,7 +169,7 @@ class Dispatcher {
     _resolve_activity_item(log_item, l) {
         return P.resolve()
             .then(() => nodes_client.instance().populate_nodes(
-                log_item.system, log_item, 'node', NODE_POPULATE_FIELDS, true))
+                log_item.system, log_item, 'node', 'node', NODE_POPULATE_FIELDS, true))
             .then(() => MDStore.instance().populate_objects(
                 log_item, 'obj', OBJECT_POPULATE_FIELDS))
             .then(() => {

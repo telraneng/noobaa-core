@@ -186,7 +186,7 @@ class NodesStore {
     }
 
     count_total_nodes() {
-        return this._nodes.col().count({});
+        return this._nodes.col().countDocuments({}); // maybe estimatedDocumentCount()
     }
 
 }

@@ -26,33 +26,50 @@ const KeysSemaphore = require('../util/keys_semaphore');
 const CoalesceStream = require('../util/coalesce_stream');
 const ChunkedContentDecoder = require('../util/chunked_content_decoder');
 const block_store_client = require('../agent/block_store_services/block_store_client').instance();
+
+const { MapClient } = require('./map_client');
+const { ChunkAPI } = require('./map_api_types');
 const { RpcError, RPC_BUFFERS } = require('../rpc');
 
 // dbg.set_level(5, 'core');
 
-const PART_ATTRS = [
-    'start',
-    'end',
-    'seq',
-    'multipart_id',
-];
-const CHUNK_ATTRS = [
-    'tier',
-    'chunk_coder_config',
-    'size',
-    'compress_size',
-    'frag_size',
-    'digest_b64',
-    'cipher_key_b64',
-    'cipher_iv_b64',
-    'cipher_auth_tag_b64',
-];
-const FRAG_ATTRS = [
-    'data_index',
-    'parity_index',
-    'lrc_index',
-    'digest_b64',
-];
+class ObjectReadable extends stream.Readable {
+
+    /**
+     * 
+     * @param {Object} params
+     * @param {number} [params.watermark]
+     * @param {number} [params.start]
+     * @param {number} [params.end]
+     * @param {(size:number) => void} read
+     */
+    constructor(params, read) {
+        super({
+            // highWaterMark Number - The maximum number of bytes to store
+            // in the internal buffer before ceasing to read
+            // from the underlying resource. Default=16kb
+            highWaterMark: params.watermark || config.IO_OBJECT_RANGE_ALIGN,
+            // encoding String - If specified, then buffers will be decoded to strings
+            // using the specified encoding. Default=null
+            encoding: null,
+            // objectMode Boolean - Whether this stream should behave as a stream of objects.
+            // Meaning that stream.read(n) returns a single value
+            // instead of a Buffer of size n. Default=false
+            objectMode: false,
+        });
+        this.pos = Number(params.start) || 0;
+        this.end = _.isUndefined(params.end) ? Infinity : Number(params.end);
+        this.pending = [];
+        this._read = read;
+    }
+
+    // close() is setting a flag to enforce immediate close
+    // and avoid more reads made by buffering
+    // which can cause many MB of unneeded reads
+    close() {
+        this.closed = true;
+    }
+}
 
 /**
  *
@@ -70,6 +87,10 @@ const FRAG_ATTRS = [
  */
 class ObjectIO {
 
+    /**
+     * 
+     * @param {nb.LocationInfo} [location_info]
+     */
     constructor(location_info) {
         this._last_io_bottleneck_report = 0;
         this.location_info = location_info;
@@ -111,6 +132,22 @@ class ObjectIO {
      *
      * upload the entire source_stream as a new object
      *
+     * @param {Object} params
+     * @param {Object} params.client
+     * @param {string} params.obj_id
+     * @param {string} params.bucket
+     * @param {string} params.key
+     * @param {string} params.content_type
+     * @param {number} params.size
+     * @param {string} params.md5_b64
+     * @param {string} params.sha256_b64
+     * @param {Object} params.xattr
+     * @param {Object} params.md_conditions
+     * @param {Object} params.copy_source
+     * @param {string} [params.tier_id]
+     * @param {string} [params.bucket_id]
+     * @param {Object} [params.chunk_split_config]
+     * @param {Object} [params.chunk_coder_config]
      */
     async upload_object(params) {
         const create_params = _.pick(params,
@@ -124,16 +161,17 @@ class ObjectIO {
             'tagging',
         );
         const complete_params = _.pick(params,
+            'obj_id',
             'bucket',
             'key',
-            'md_conditions'
+            'md_conditions',
         );
         try {
-            dbg.log0('upload_object: start upload',
-                util.inspect(create_params, { colors: true, depth: null, breakLength: Infinity }));
+            dbg.log0('upload_object: start upload', create_params);
             const create_reply = await params.client.object.create_object_upload(create_params);
             params.obj_id = create_reply.obj_id;
-            params.tier = create_reply.tier;
+            params.tier_id = create_reply.tier;
+            params.bucket_id = create_reply.bucket;
             params.chunk_split_config = create_reply.chunk_split_config;
             params.chunk_coder_config = create_reply.chunk_coder_config;
             complete_params.obj_id = create_reply.obj_id;
@@ -173,16 +211,18 @@ class ObjectIO {
             'sha256_b64'
         );
         const complete_params = _.pick(params,
+            'multipart_id',
             'obj_id',
             'bucket',
             'key',
-            'num'
+            'num',
         );
         try {
             dbg.log0('upload_multipart: start upload', complete_params);
             const multipart_reply = await params.client.object.create_multipart(create_params);
             params.multipart_id = multipart_reply.multipart_id;
-            params.tier = multipart_reply.tier;
+            params.tier_id = multipart_reply.tier;
+            params.bucket_id = multipart_reply.bucket;
             params.chunk_split_config = multipart_reply.chunk_split_config;
             params.chunk_coder_config = multipart_reply.chunk_coder_config;
             complete_params.multipart_id = multipart_reply.multipart_id;
@@ -284,12 +324,12 @@ class ObjectIO {
         params.seq = 0;
 
         params.source_stream._readableState.highWaterMark = size_utils.MEGABYTE;
-        //Commeneted out due to changes in node.js v10
-        //stream: 'readable' have precedence over flowing
-        //https://github.com/nodejs/node/commit/cf5f9867ff
-        //params.source_stream.on('readable',
+        // Commeneted out due to changes in node.js v10
+        // stream: 'readable' have precedence over flowing
+        // https://github.com/nodejs/node/commit/cf5f9867ff
+        // params.source_stream.on('readable',
         //            () => dbg.log0('UPLOAD: readable', params.desc, 'streaming to', params.bucket, params.key)
-        //);
+        // );
 
         complete_params.size = 0;
         complete_params.num_parts = 0;
@@ -347,281 +387,66 @@ class ObjectIO {
      *
      * upload parts to object in upload mode
      * where data is buffer or array of buffers in memory.
-     *
+     * @param {Object} params
+     * @param {Object} complete_params
+     * @param {nb.ChunkInfo[]} chunks
+     * @param {Object} params
      */
     async _upload_chunks(params, complete_params, chunks, callback) {
         try {
-            const parts = this._create_parts(params, complete_params, chunks);
-            const map_client = new MapClient({
-                chunks,
-                parts,
-                rpc_client: params.client,
-                location_info: params.location_info,
+            params.range = {
+                start: params.start,
+                end: params.start,
+            };
+            const map_chunks = chunks.map(chunk_info => {
+                // nullify the chunk's data to release the memory buffers
+                // since we already coded it into the fragments
+                chunk_info.data = undefined;
+                chunk_info.tier_id = params.tier_id;
+                chunk_info.bucket_id = params.bucket_id;
+                const part = {
+                    obj_id: params.obj_id,
+                    millistamp: time_utils.millistamp(),
+                    bucket: params.bucket,
+                    key: params.key,
+                    start: params.start,
+                    end: params.start + chunk_info.size,
+                    seq: params.seq,
+                    desc: { ...params.desc, start: params.start },
+                };
+                if (params.multipart_id) part.multipart_id = params.multipart_id;
+                chunk_info.parts = [part];
+                const chunk = new ChunkAPI(chunk_info);
+                params.seq += 1;
+                params.start += chunk.size;
+                params.range.end = params.start;
+                complete_params.size += chunk.size;
+                complete_params.num_parts += 1;
+                dbg.log0('UPLOAD: part', part.desc, chunk);
+                return chunk;
             });
-            await map_client.run();
-            // await this._allocate_parts(params, parts);
-            // await this._write_parts(params, parts);
-            // await this._finalize_parts(params, parts);
+            const mc = new MapClient({
+                chunks: map_chunks,
+                location_info: params.location_info,
+                check_dups: true,
+                rpc_client: params.client,
+                desc: params.desc,
+                read_frags: (part, frags) => this._read_frags(params, part, frags),
+                report_error: (block_md, action, err) => this._report_error_on_object_upload(params, block_md, action, err),
+                block_write_sem_global: this._block_write_sem_global,
+                block_replicate_sem_global: this._block_replicate_sem_global,
+                block_read_sem_global: this._block_read_sem_global,
+                block_write_sem_agent: this._block_write_sem_agent,
+                block_replicate_sem_agent: this._block_replicate_sem_agent,
+                block_read_sem_agent: this._block_read_sem_agent,
+            });
+            await mc.run();
+            if (mc.had_errors) throw new Error('Upload map errors');
             return callback();
         } catch (err) {
+            dbg.error('UPLOAD: _upload_chunks', err.stack || err);
             return callback(err);
         }
-    }
-
-
-    /**
-     *
-     * _create_parts
-     *
-     */
-    _create_parts(params, complete_params, chunks) {
-        params.range = {
-            start: params.start,
-            end: params.start,
-        };
-        return _.map(chunks, chunk => {
-            // nullify the chunk's data to release the memory buffers
-            // since we already coded it into the fragments
-            chunk.data = undefined;
-            chunk.tier = params.tier;
-            const part = {
-                chunk,
-                millistamp: time_utils.millistamp(),
-                bucket: params.bucket,
-                key: params.key,
-                start: params.start,
-                end: params.start + chunk.size,
-                seq: params.seq,
-                desc: _.clone(params.desc),
-            };
-            part.desc.start = part.start;
-            if (params.multipart_id) part.multipart_id = params.multipart_id;
-            params.seq += 1;
-            params.start += chunk.size;
-            params.range.end = params.start;
-            complete_params.size += chunk.size;
-            complete_params.num_parts += 1;
-            dbg.log0('UPLOAD: part', part.desc);
-            return part;
-        });
-    }
-
-    /**
-     *
-     * _allocate_parts
-     *
-     */
-    async _allocate_parts(params, parts) {
-        const millistamp = time_utils.millistamp();
-        dbg.log2('UPLOAD:', params.desc,
-            'allocate parts', range_utils.human_range(params.range));
-        const res = await params.client.object.allocate_object_parts({
-            obj_id: params.obj_id,
-            bucket: params.bucket,
-            key: params.key,
-            parts: _.map(parts, part => {
-                const p = _.pick(part, PART_ATTRS);
-                p.chunk = _.pick(part.chunk, CHUNK_ATTRS);
-                p.chunk.frags = _.map(part.chunk.frags, frag => _.pick(frag, FRAG_ATTRS));
-                p.chunk.tier = part.chunk.tier.unwrap();
-                return p;
-            }),
-            location_info: this.location_info
-        });
-        dbg.log1('UPLOAD:', params.desc,
-            'allocate parts', range_utils.human_range(params.range),
-            'took', time_utils.millitook(millistamp)
-        );
-        _.each(parts, (part, i) => {
-            part.alloc_part = res.parts[i];
-        });
-    }
-
-    /**
-     *
-     * _finalize_parts
-     *
-     */
-    async _finalize_parts(params, parts) {
-        const millistamp = time_utils.millistamp();
-        dbg.log2('UPLOAD:', params.desc,
-            'finalize parts', range_utils.human_range(params.range));
-        await params.client.object.finalize_object_parts({
-            obj_id: params.obj_id,
-            bucket: params.bucket,
-            key: params.key,
-            parts: _.map(parts, 'alloc_part')
-        });
-        dbg.log1('UPLOAD:', params.desc,
-            'finalize parts', range_utils.human_range(params.range),
-            'took', time_utils.millitook(millistamp));
-    }
-
-    /**
-     *
-     * _write_parts
-     *
-     */
-    async _write_parts(params, parts) {
-        const millistamp = time_utils.millistamp();
-        dbg.log2('UPLOAD:', params.desc,
-            'write parts', range_utils.human_range(params.range));
-        await P.map(parts, part => this._write_part(params, part));
-        dbg.log1('UPLOAD:', params.desc,
-            'write parts', range_utils.human_range(params.range),
-            'took', time_utils.millitook(millistamp));
-    }
-
-    /**
-     *
-     * write the allocated part fragments to the storage nodes
-     *
-     */
-    async _write_part(params, part) {
-        if (!part.millistamp) {
-            part.millistamp = time_utils.millistamp();
-        }
-        let done = false;
-        while (!done) {
-            if (part.alloc_part.chunk_id) {
-                dbg.log0('UPLOAD:', part.desc, 'CHUNK DEDUP');
-                // nullify the chunk to release the fragments memory buffers
-                // while it's waiting in the finalize queue
-                part.chunk = undefined;
-                return;
-            }
-
-            dbg.log1('UPLOAD: _write_part', part.desc, util.inspect(part.alloc_part, true, null, true));
-
-            try {
-                await P.map(part.alloc_part.chunk.frags, (frag, i) => {
-                    const buffer = part.chunk.frags[i].block;
-                    const desc = _.clone(part.desc);
-                    return this._write_frag(params, frag, buffer, desc);
-                });
-                done = true;
-            } catch (err) {
-
-                // handle errors of part write:
-                // we only retry reallocating the entire part
-                // since the allocate api is hard to be manipulated
-                // to add just missing blocks.
-
-                // limit the retries by time since the part began to write
-                if (time_utils.millistamp() - part.millistamp > config.IO_WRITE_PART_ATTEMPTS_EXHAUSTED) {
-                    dbg.error('UPLOAD:', part.desc, 'write part attempts exhausted', err);
-                    throw err;
-                }
-
-                dbg.warn('UPLOAD:', part.desc, 'write part reallocate on ERROR', err);
-                await this._allocate_parts(params, [part]);
-            }
-        }
-    }
-
-    async _write_frag(params, frag, buffer, desc) {
-        desc.frag = get_frag_desc(frag);
-        const source_block = frag.blocks[0];
-        const blocks_to_replicate = frag.blocks.slice(1);
-        await this._retry_write_block(params, desc, buffer, source_block);
-        await this._retry_replicate_blocks(params, desc, source_block, blocks_to_replicate);
-    }
-
-    // retry the write operation
-    // once retry exhaust we report and throw an error
-    async _retry_write_block(params, desc, buffer, source_block) {
-        let done = false;
-        let retries = 0;
-        while (!done) {
-            try {
-                await this._write_block(params, buffer, source_block.block_md, desc);
-                done = true;
-            } catch (err) {
-                await this._report_error_on_object_upload(params, source_block.block_md, 'write', err);
-                if (err.rpc_code === 'NO_BLOCK_STORE_SPACE') throw err;
-                retries += 1;
-                if (retries > config.IO_WRITE_BLOCK_RETRIES) throw err;
-                await P.delay(config.IO_WRITE_RETRY_DELAY_MS);
-            }
-        }
-    }
-
-    // retry the replicate operations
-    // once any retry exhaust we report and throw an error
-    async _retry_replicate_blocks(params, desc, source_block, blocks_to_replicate) {
-        return P.map(blocks_to_replicate, async b => {
-            let done = false;
-            let retries = 0;
-            while (!done) {
-                try {
-                    await this._replicate_block(params, source_block.block_md, b.block_md, desc);
-                    done = true;
-                } catch (err) {
-                    await this._report_error_on_object_upload(params, b.block_md, 'replicate', err);
-                    if (err.rpc_code === 'NO_BLOCK_STORE_SPACE') throw err;
-                    retries += 1;
-                    if (retries > config.IO_REPLICATE_BLOCK_RETRIES) throw err;
-                    await P.delay(config.IO_REPLICATE_RETRY_DELAY_MS);
-                }
-            }
-        });
-    }
-
-    /**
-     *
-     * write a block to the storage node
-     *
-     */
-    _write_block(params, buffer, block_md, desc) {
-        // limit writes per agent + global IO semaphore to limit concurrency
-        return this._block_write_sem_agent.surround_key(String(block_md.node), () =>
-                this._block_write_sem_global.surround(() => {
-                    dbg.log1('UPLOAD:', desc, 'write block', block_md.id, block_md.address, buffer.length);
-
-                    this._error_injection_on_write();
-
-                    return block_store_client.write_block(params.client, {
-                        [RPC_BUFFERS]: { data: buffer },
-                        block_md,
-                    }, {
-                        address: block_md.address,
-                        timeout: config.IO_WRITE_BLOCK_TIMEOUT,
-                    });
-                })
-            )
-            .catch(err => {
-                dbg.warn('UPLOAD:', desc, 'write block', block_md.id, block_md.address, 'ERROR', err);
-                throw err;
-            });
-    }
-
-
-    _replicate_block(params, source_md, target_md, desc) {
-        // limit replicates per agent + Global IO semaphore to limit concurrency
-        return this._block_replicate_sem_agent.surround_key(String(target_md.node), () =>
-                this._block_replicate_sem_global.surround(() => {
-                    dbg.log1('UPLOAD:', desc,
-                        'replicate block', source_md.id, source_md.address,
-                        'to', target_md.id, target_md.address);
-
-                    this._error_injection_on_write();
-
-                    return params.client.block_store.replicate_block({
-                        target: target_md,
-                        source: source_md,
-                    }, {
-                        address: target_md.address,
-                        timeout: config.IO_REPLICATE_BLOCK_TIMEOUT,
-                    });
-                })
-            )
-            .catch(err => {
-                dbg.warn('UPLOAD:', desc,
-                    'replicate block', source_md.id, source_md.address,
-                    'to', target_md.id, target_md.address,
-                    'ERROR', err);
-                throw err;
-            });
     }
 
     async _report_error_on_object_upload(params, block_md, action, err) {
@@ -647,12 +472,6 @@ class ObjectIO {
         }
     }
 
-    _error_injection_on_write() {
-        if (config.ERROR_INJECTON_ON_WRITE &&
-            config.ERROR_INJECTON_ON_WRITE > Math.random()) {
-            throw new RpcError('ERROR_INJECTON_ON_WRITE');
-        }
-    }
 
 
     ////////////////////////////////////////////////////////////////////////////
@@ -675,36 +494,20 @@ class ObjectIO {
      *
      * returns a readable stream to the object.
      * see ObjectReader.
-     *
+     * @param {Object} params
+     * @param {number} [params.watermark]
+     * @param {number} [params.start]
+     * @param {number} [params.end]
+     * @param {Object} [params.client]
+     * @param {string} [params.obj_id]
+     * @param {string} [params.version_id]
+     * @param {string} [params.bucket]
+     * @param {string} [params.key]
+     * @param {Object} [params.object_md]
+     * @returns {ObjectReadable}
      */
     read_object_stream(params) {
-        const reader = new stream.Readable({
-            // highWaterMark Number - The maximum number of bytes to store
-            // in the internal buffer before ceasing to read
-            // from the underlying resource. Default=16kb
-            highWaterMark: params.watermark || config.IO_OBJECT_RANGE_ALIGN,
-            // encoding String - If specified, then buffers will be decoded to strings
-            // using the specified encoding. Default=null
-            encoding: null,
-            // objectMode Boolean - Whether this stream should behave as a stream of objects.
-            // Meaning that stream.read(n) returns a single value
-            // instead of a Buffer of size n. Default=false
-            objectMode: false,
-        });
-
-        reader.pos = Number(params.start) || 0;
-        reader.end = _.isUndefined(params.end) ? Infinity : Number(params.end);
-        reader.pending = [];
-
-        // close() is setting a flag to enforce immediate close
-        // and avoid more reads made by buffering
-        // which can cause many MB of unneeded reads
-        reader.close = () => {
-            reader.closed = true;
-        };
-
-        // implement the stream's Readable._read() function
-        reader._read = requested_size => {
+        const reader = new ObjectReadable(params, requested_size => {
             if (reader.closed) {
                 dbg.log1('READ reader closed', reader.pos);
                 reader.push(null);
@@ -771,7 +574,7 @@ class ObjectIO {
                         dbg.error('READ prefetch end of file error', err);
                     });
             }
-        };
+        });
         return reader;
     }
 
@@ -780,20 +583,18 @@ class ObjectIO {
      *
      * read_object_with_cache
      *
-     * @param params (Object):
-     *   - client - rpc client with auth info if needed
-     *   - obj_id (String)
-     *   - bucket (String)
-     *   - key (String)
-     *   - start (Number) - object start offset
-     *   - end (Number) - object end offset
-     *
-     * @return buffer (Promise to Buffer) - a portion of data.
+     * @param {Object} params
+     * @param {Object} params.client rpc client with auth info if needed
+     * @param {string} params.obj_id
+     * @param {string} params.bucket
+     * @param {string} params.key
+     * @param {number} params.start object start offset
+     * @param {number} params.end object end offset
+     * @returns {Promise<Buffer[]>} a portion of data.
      *      this is mostly likely shorter than requested, and the reader should repeat.
      *      null is returned on empty range or EOF.
-     *
      */
-    read_object_with_cache(params) {
+    async read_object_with_cache(params) {
         dbg.log1('READ read_object_with_cache: range', range_utils.human_range(params));
         if (!params.obj_id) throw new Error(util.format('read_object_with_cache: no obj_id provided', params));
 
@@ -817,7 +618,8 @@ class ObjectIO {
             pos = range.end;
         }
 
-        return P.all(promises).then(buffers => _.filter(buffers, b => b && b.length));
+        const buffers = await Promise.all(promises);
+        return _.filter(buffers, b => b && b.length);
     }
 
 
@@ -977,7 +779,7 @@ class ObjectIO {
 
     _read_frag(params, part, frag) {
 
-        if (frag.block) return;
+        if (frag.data) return;
         if (!frag.blocks) return;
         if (frag.read_promise) return frag.read_promise;
 
@@ -994,10 +796,10 @@ class ObjectIO {
                         block.block_md.digest_b64 !== frag.digest_b64) {
                         throw new Error('READ _read_frag: (_verification_mode) inconsistent replica digests');
                     }
-                    if (frag.block) {
-                        assert(buffer.equals(frag.block), 'READ _read_frag: (_verification_mode) inconsistent data');
+                    if (frag.data) {
+                        assert(buffer.equals(frag.data), 'READ _read_frag: (_verification_mode) inconsistent data');
                     } else {
-                        frag.block = buffer;
+                        frag.data = buffer;
                     }
                 })
                 .catch(err => this._report_error_on_object_read(params, part, block.block_md, err))
@@ -1011,7 +813,7 @@ class ObjectIO {
                 const block = frag.blocks[i];
                 return this._read_block(params, block.block_md)
                     .then(buffer => {
-                        frag.block = buffer;
+                        frag.data = buffer;
                     })
                     .catch(err => this._report_error_on_object_read(params, part, block.block_md, err))
                     .catch(() => read_next_block(i + 1));
@@ -1148,6 +950,7 @@ function combine_parts_buffers_in_range(parts, start, end) {
         throw new Error('no parts for data');
     }
     let pos = start;
+    /** @type {Buffer[]} */
     const buffers = [];
     _.forEach(parts, part => {
         let part_range = range_utils.intersection(part.start, part.end, pos, end);

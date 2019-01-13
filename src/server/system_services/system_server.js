@@ -912,15 +912,15 @@ function get_node_installation_string(req) {
 }
 
 
-function set_last_stats_report_time(req) {
+async function set_last_stats_report_time(req) {
     var updates = {};
     updates._id = req.system._id;
     updates.last_stats_report = req.rpc_params.last_stats_report;
-    return system_store.make_changes({
+    await system_store.make_changes({
         update: {
             systems: [updates]
         }
-    }).return();
+    });
 }
 
 async function update_n2n_config(req) {

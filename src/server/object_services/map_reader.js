@@ -2,18 +2,18 @@
 'use strict';
 
 const _ = require('lodash');
+const util = require('util');
 
 const P = require('../../util/promise');
 const dbg = require('../../util/debug_module')(__filename);
 const config = require('../../../config.js');
 const mapper = require('./mapper');
-const util = require('util');
 const MDStore = require('./md_store').MDStore;
-const node_allocator = require('../node_services/node_allocator');
-const system_store = require('../system_services/system_store').get_instance();
-const system_utils = require('../utils/system_utils');
+const map_server = require('./map_server');
 const server_rpc = require('../server_rpc');
 const auth_server = require('../common_services/auth_server');
+const system_store = require('../system_services/system_store').get_instance();
+const node_allocator = require('../node_services/node_allocator');
 
 
 /**
@@ -100,6 +100,10 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
     const chunks = _.map(parts, 'chunk');
     const tiering_status_by_bucket_id = {};
 
+    for (const chunk of chunks) {
+        map_server.populate_chunk(chunk);
+    }
+
     await _load_chunk_mappings(chunks, tiering_status_by_bucket_id);
 
 
@@ -110,12 +114,13 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
             const tiering_status = tiering_status_by_bucket_id[bucket._id];
             const selected_tier = mapper.select_tier_for_write(bucket.tiering, tiering_status);
             for (const chunk of chunks) {
-                system_utils.prepare_chunk_for_mapping(chunk);
+                map_server.populate_chunk(chunk);
                 if (!chunk.tier._id || !_.isEqual(chunk.tier._id, selected_tier._id)) {
                     dbg.log0('Chunk with low tier will be sent for rebuilding', chunk);
                     chunks_to_scrub.push(chunk);
                 } else if (location_info) {
-                    const mapping = mapper.map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status, location_info);
+                    const chunk_info = mapper.get_chunk_info(chunk);
+                    const mapping = mapper.map_chunk(chunk_info, chunk.tier, bucket.tiering, tiering_status, location_info);
                     if (mapper.should_rebuild_chunk_to_local_mirror(mapping, location_info)) {
                         dbg.log2('Chunk with following mapping will be sent for rebuilding', chunk, mapping);
                         chunks_to_scrub.push(chunk);
@@ -143,9 +148,8 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
     }
 
     return _.map(parts, part => {
-        system_utils.prepare_chunk_for_mapping(part.chunk);
         const part_info = mapper.get_part_info(
-            part, adminfo, tiering_status_by_bucket_id[part.chunk.bucket], location_info
+            part, adminfo, tiering_status_by_bucket_id[part.chunk.bucket._id], location_info
         );
         if (set_obj) {
             part_info.obj = part.obj;
@@ -155,13 +159,13 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
 }
 
 async function _load_chunk_mappings(chunks, tiering_status_by_bucket_id) {
-    const chunks_buckets = _.uniq(_.map(chunks, chunk => String(chunk.bucket)));
+    const chunks_buckets = _.uniq(_.map(chunks, chunk => String(chunk.bucket._id)));
     return P.join(
         MDStore.instance().load_blocks_for_chunks(chunks),
         P.map(chunks_buckets, async bucket_id => {
             const bucket = system_store.data.get_by_id(bucket_id);
             if (!bucket) {
-                console.error(`read_parts_mappings: Bucket ${bucket_id} does not exist`);
+                console.error(`read_parts_mappings: Bucket ${bucket_id} does not exist`, chunks_buckets);
                 return;
             }
             await node_allocator.refresh_tiering_alloc(bucket.tiering);

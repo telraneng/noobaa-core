@@ -1,6 +1,8 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
+/// <reference path="../sdk/nb.d.ts" />
+
 const _ = require('lodash');
 const util = require('util');
 const mongodb = require('mongodb');
@@ -136,6 +138,10 @@ function resolve_object_ids_paths(idmap, item, paths, allow_missing) {
     return item;
 }
 
+/**
+ * @param {string} [id_str] 
+ * @returns {nb.ID}
+ */
 function make_object_id(id_str) {
     return new mongodb.ObjectId(id_str);
 }

@@ -141,7 +141,8 @@ module.exports = {
                 required: ['obj_id', 'chunk_split_config', 'chunk_coder_config'],
                 properties: {
                     obj_id: { objectid: true },
-                    tier: { $ref: 'common_api#/definitions/tier_name' },
+                    bucket_id: { objectid: true },
+                    tier_id: { objectid: true },
                     chunk_split_config: { $ref: 'common_api#/definitions/chunk_split_config' },
                     chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 }
@@ -275,7 +276,8 @@ module.exports = {
                 required: ['multipart_id', 'chunk_split_config', 'chunk_coder_config'],
                 properties: {
                     multipart_id: { objectid: true },
-                    tier: { $ref: 'common_api#/definitions/tier_name' },
+                    bucket_id: { objectid: true },
+                    tier_id: { objectid: true },
                     chunk_split_config: { $ref: 'common_api#/definitions/chunk_split_config' },
                     chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 }
@@ -418,7 +420,7 @@ module.exports = {
             }
         },
 
-        get_mapping_instructions: {
+        get_mapping: {
             method: 'POST',
             params: {
                 type: 'object',
@@ -426,10 +428,11 @@ module.exports = {
                 properties: {
                     chunks: {
                         type: 'array',
-                        items: { $ref: '#/definitions/chunks_info' }
+                        items: { $ref: '#/definitions/chunk_info' }
                     },
                     location_info: { $ref: 'common_api#/definitions/location_info' },
-                    move_to_tier: { type: 'string' },
+                    move_to_tier: { objectid: true },
+                    check_dups: { type: 'boolean' },
                 },
             },
             reply: {
@@ -447,30 +450,22 @@ module.exports = {
             }
         },
 
-        finalize_object_parts: {
+        put_mapping: {
             method: 'PUT',
             params: {
                 type: 'object',
-                required: [
-                    'obj_id',
-                    'bucket',
-                    'key',
-                    'parts'
-                ],
+                required: ['chunks'],
                 properties: {
-                    obj_id: {
-                        objectid: true
-                    },
-                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
+                    chunks: {
+                        type: 'array',
+                        items: { $ref: '#/definitions/chunk_info' }
                     },
                     parts: {
                         type: 'array',
-                        items: {
-                            $ref: '#/definitions/part_info'
-                        }
-                    }
+                        items: { $ref: '#/definitions/part_info' }
+                    },
+                    location_info: { $ref: 'common_api#/definitions/location_info' },
+                    move_to_tier: { objectid: true },
                 },
             },
             auth: {
@@ -674,23 +669,15 @@ module.exports = {
                     'key',
                 ],
                 properties: {
-                    obj_id: {
-                        objectid: true
-                    },
+                    obj_id: { objectid: true },
                     version_id: { type: 'string' },
                     bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
-                    },
-                    md_conditions: {
-                        $ref: '#/definitions/md_conditions',
-                    },
+                    key: { type: 'string' },
+                    md_conditions: { $ref: '#/definitions/md_conditions' },
                     adminfo: {
                         type: 'object',
                         properties: {
-                            signed_url_endpoint: {
-                                type: 'string'
-                            },
+                            signed_url_endpoint: { type: 'string' },
                         }
                     },
                 }
@@ -712,19 +699,11 @@ module.exports = {
                     'key'
                 ],
                 properties: {
-                    obj_id: {
-                        objectid: true
-                    },
+                    obj_id: { objectid: true },
                     bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
-                    },
-                    content_type: {
-                        type: 'string',
-                    },
-                    xattr: {
-                        $ref: '#/definitions/xattr',
-                    },
+                    key: { type: 'string' },
+                    content_type: { type: 'string' },
+                    xattr: { $ref: '#/definitions/xattr' },
                 }
             },
             auth: {
@@ -1307,12 +1286,10 @@ module.exports = {
                 chunk_offset: {
                     type: 'integer',
                 },
-                chunk: {
-                    $ref: '#/definitions/chunk_info',
-                },
-                chunk_id: {
-                    objectid: true
-                },
+                // TODO remove chunk but after adjusting read_object/node/host_mapping
+                chunk: { $ref: '#/definitions/chunk_info' },
+                chunk_id: { objectid: true },
+                obj_id: { objectid: true },
             }
         },
 
@@ -1323,7 +1300,10 @@ module.exports = {
                 'frags'
             ],
             properties: {
-                tier: { type: 'string' },
+                _id: { objectid: true },
+                bucket_id: { objectid: true },
+                tier_id: { objectid: true },
+                dup_chunk: { objectid: true },
                 chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 size: { type: 'integer' },
                 frag_size: { type: 'integer' },
@@ -1334,26 +1314,22 @@ module.exports = {
                 cipher_auth_tag_b64: { type: 'string' },
                 frags: {
                     type: 'array',
-                    items: {
-                        $ref: '#/definitions/frag_info',
-                    }
+                    items: { $ref: '#/definitions/frag_info' }
                 },
-                adminfo: {
-                    type: 'object',
-                    required: ['health'],
-                    properties: {
-                        health: {
-                            enum: ['available', 'building', 'unavailable'],
-                            type: 'string'
-                        }
-                    }
+                parts: {
+                    type: 'array',
+                    items: { $ref: '#/definitions/part_info' }
                 },
+                is_accessible: { type: 'boolean' },
+                is_building_blocks: { type: 'boolean' },
+                is_building_frags: { type: 'boolean' },
             }
         },
 
         frag_info: {
             type: 'object',
             properties: {
+                _id: { objectid: true },
                 data_index: { type: 'integer' },
                 parity_index: { type: 'integer' },
                 lrc_index: { type: 'integer' },
@@ -1362,18 +1338,7 @@ module.exports = {
                     type: 'array',
                     items: { $ref: '#/definitions/block_info' }
                 },
-                deletions: {
-                    type: 'array',
-                    items: { $ref: '#/definitions/deletion_info' }
-                },
-                future_deletions: {
-                    type: 'array',
-                    items: { $ref: '#/definitions/deletion_info' }
-                },
-                allocations: {
-                    type: 'array',
-                    items: { $ref: '#/definitions/alloc_info' }
-                },
+                is_accessible: { type: 'boolean' },
             }
         },
 
@@ -1381,59 +1346,26 @@ module.exports = {
             type: 'object',
             required: ['block_md'],
             properties: {
-                block_md: {
-                    $ref: 'common_api#/definitions/block_md'
-                },
-                accessible: {
-                    type: 'boolean'
-                },
+                block_md: { $ref: 'common_api#/definitions/block_md' },
+                is_accessible: { type: 'boolean' },
+                is_allocation: { type: 'boolean' },
+                is_deletion: { type: 'boolean' },
+                is_future_deletion: { type: 'boolean' },
                 adminfo: {
                     type: 'object',
                     required: ['pool_name', 'node_name', 'node_ip', 'online'],
                     properties: {
-                        node_name: {
-                            type: 'string',
-                        },
-                        host_name: {
-                            type: 'string',
-                        },
-                        mount: {
-                            type: 'string',
-                        },
-                        pool_name: {
-                            type: 'string'
-                        },
-                        node_ip: {
-                            type: 'string',
-                        },
-                        online: {
-                            type: 'boolean'
-                        },
-                        in_cloud_pool: {
-                            type: 'boolean'
-                        },
-                        in_mongo_pool: {
-                            type: 'boolean'
-                        },
+                        node_name: { type: 'string' },
+                        host_name: { type: 'string' },
+                        mount: { type: 'string' },
+                        pool_name: { type: 'string' },
+                        node_ip: { type: 'string' },
+                        online: { type: 'boolean' },
+                        in_cloud_pool: { type: 'boolean' },
+                        in_mongo_pool: { type: 'boolean' },
                         mirror_group: { type: 'string' }
                     }
                 }
-            }
-        },
-
-        deletion_info: {
-            type: 'object',
-            required: ['block_id'],
-            properties: {
-                block_id: { objectid: true }
-            }
-        },
-
-        alloc_info: {
-            type: 'object',
-            properties: {
-                mirror_group: { type: 'string' },
-                block: { $ref: '#/definitions/block_info' },
             }
         },
 

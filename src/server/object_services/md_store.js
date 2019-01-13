@@ -1,6 +1,8 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
+/// <reference path="../../sdk/nb.d.ts" />
+
 const _ = require('lodash');
 const assert = require('assert');
 const moment = require('moment');
@@ -11,7 +13,6 @@ const P = require('../../util/promise');
 const dbg = require('../../util/debug_module')(__filename);
 const mongo_utils = require('../../util/mongo_utils');
 const mongo_client = require('../../util/mongo_client');
-const nodes_client = require('../node_services/nodes_client');
 const mongo_functions = require('../../util/mongo_functions');
 const object_md_schema = require('./schemas/object_md_schema');
 const object_md_indexes = require('./schemas/object_md_indexes');
@@ -88,7 +89,7 @@ class MDStore {
     }
 
     make_md_id(id_str) {
-        return new mongodb.ObjectId(id_str);
+        return make_md_id(id_str);
     }
 
     make_md_id_from_time(time, zero_suffix) {
@@ -407,13 +408,13 @@ class MDStore {
                 } : undefined
             }).toArray(),
 
-            pagination ? this._objects.col().count(query) : undefined,
+            pagination ? this._objects.col().countDocuments(query) : undefined,
 
             // completed uploads count
-            this._objects.col().count(completed_query),
+            this._objects.col().countDocuments(completed_query),
 
             // uploading count
-            this._objects.col().count(uploading_query)
+            this._objects.col().countDocuments(uploading_query)
         );
 
         return {
@@ -664,7 +665,7 @@ class MDStore {
     }
 
     async count_objects_of_bucket(bucket_id) {
-        return this._objects.col().count({
+        return this._objects.col().countDocuments({
             bucket: bucket_id,
             deleted: null,
             delete_marker: null,
@@ -761,7 +762,7 @@ class MDStore {
             deleted: { $lt: new Date(max_delete_time) },
         }, {
             limit: Math.min(limit, 1000),
-            fields: {
+            projection: {
                 _id: 1,
                 deleted: 1
             }
@@ -946,11 +947,15 @@ class MDStore {
             .toArray();
     }
 
-    find_parts_chunk_ids(obj) {
+    /**
+     * @param {nb.ObjectMD} obj
+     * @returns {Promise<nb.ID[]>}
+     */
+    async find_parts_chunk_ids(obj) {
         return this._parts.col().find({
                 obj: obj._id,
             }, {
-                fields: {
+                projection: {
                     _id: 0,
                     chunk: 1
                 }
@@ -969,12 +974,16 @@ class MDStore {
             .toArray();
     }
 
-    find_parts_unreferenced_chunk_ids(chunk_ids) {
+    /**
+     * @param {nb.ID[]} chunk_ids 
+     * @returns {Promise<nb.ID[]>}
+     */
+    async find_parts_unreferenced_chunk_ids(chunk_ids) {
         return this._parts.col().find({
                 chunk: { $in: chunk_ids },
                 deleted: null,
             }, {
-                fields: {
+                projection: {
                     _id: 0,
                     chunk: 1
                 }
@@ -1003,32 +1012,22 @@ class MDStore {
             });
     }
 
-    load_parts_objects_for_chunks(chunks) {
-        let parts;
-        let objects;
+    async load_parts_objects_for_chunks(chunks) {
         if (!chunks || !chunks.length) return;
-        return this._parts.col().find({
-                chunk: {
-                    $in: mongo_utils.uniq_ids(chunks, '_id')
-                }
+        const parts = await this._parts.col().find({
+                chunk: { $in: mongo_utils.uniq_ids(chunks, '_id') }
             })
-            .toArray()
-            .then(res_parts => {
-                parts = res_parts;
-                return this._objects.col().find({
-                        _id: {
-                            $in: mongo_utils.uniq_ids(res_parts, 'obj')
-                        }
-                    })
-                    .toArray();
+            .toArray();
+        const objects = await this._objects.col().find({
+                _id: { $in: mongo_utils.uniq_ids(parts, 'obj') }
             })
-            .then(res_objects => {
-                objects = res_objects;
-            })
-            .then(() => ({
-                parts,
-                objects
-            }));
+            .toArray();
+        const parts_by_chunk = _.groupBy(parts, 'chunk');
+        const objects_by_id = _.keyBy(objects, '_id');
+        for (const chunk of chunks) {
+            chunk.parts = parts_by_chunk[chunk._id];
+            chunk.objects = _.uniq(_.compact(_.map(chunk.parts, part => objects_by_id[part.obj])));
+        }
     }
 
     find_all_parts_of_object(obj) {
@@ -1105,7 +1104,12 @@ class MDStore {
             .then(res => mongo_utils.check_update_one(res, 'chunk'));
     }
 
-    update_chunks_by_ids(chunk_ids, set_updates, unset_updates) {
+    /**
+     * @param {nb.ID[]} chunk_ids
+     * @param {Object} [set_updates]
+     * @param {Object} [unset_updates]
+     */
+    async update_chunks_by_ids(chunk_ids, set_updates, unset_updates) {
         console.log('update_chunks_by_ids:', chunk_ids, compact_updates(set_updates, unset_updates));
         if (!chunk_ids || !chunk_ids.length) return;
         return this._chunks.col().updateMany({
@@ -1133,6 +1137,11 @@ class MDStore {
         return mongo_utils.populate(parts, 'chunk', this._chunks.col());
     }
 
+    /**
+     * @param {nb.Bucket} bucket
+     * @param {nb.DBBuffer[]} dedup_keys
+     * @returns {nb.ChunkSchemaDB[]}
+     */
     find_chunks_by_dedup_key(bucket, dedup_keys) {
         return this._chunks.col().find({
                 system: bucket.system._id,
@@ -1161,7 +1170,7 @@ class MDStore {
                     $in: buckets
                 }
             }), {
-                fields: {
+                projection: {
                     _id: 1
                 },
                 sort: {
@@ -1183,7 +1192,7 @@ class MDStore {
                 } : undefined,
                 deleted: null,
             }), {
-                fields: {
+                projection: {
                     _id: 1
                 },
                 sort: {
@@ -1207,7 +1216,7 @@ class MDStore {
                 tier,
                 deleted: null,
             }, {
-                fields: { _id: 1 },
+                projection: { _id: 1 },
                 hint: 'tiering_index',
                 sort,
                 limit,
@@ -1255,7 +1264,10 @@ class MDStore {
             });
     }
 
-    delete_chunks_by_ids(chunk_ids) {
+    /**
+     * @param {nb.ID[]} chunk_ids 
+     */
+    async delete_chunks_by_ids(chunk_ids) {
         const delete_date = new Date();
         if (!chunk_ids || !chunk_ids.length) return;
         return this._chunks.col().updateMany({
@@ -1296,7 +1308,7 @@ class MDStore {
         // both iterating over the chunks and running a query over all the chunks was too lengthy operations.
         const sample_size = 10000;
         return P.join(
-                this._chunks.col().count(),
+                this._chunks.col().estimatedDocumentCount(),
                 this._chunks.col().aggregate([
                     { $sample: { size: sample_size } },
                     { $match: { dedup_key: { $exists: true } } },
@@ -1313,7 +1325,7 @@ class MDStore {
         return this._chunks.col().find({
                 dedup_key: marker ? { $lt: marker } : { $exists: true }
             }, {
-                fields: {
+                projection: {
                     _id: 1,
                     dedup_key: 1
                 },
@@ -1337,7 +1349,7 @@ class MDStore {
         };
         return this._chunks.col().find(query, {
                 limit: Math.min(limit, 1000),
-                fields: {
+                projection: {
                     _id: 1,
                     deleted: 1
                 }
@@ -1390,9 +1402,7 @@ class MDStore {
             };
         }
         return this._blocks.col().find(query, {
-                sort: {
-                    _id: -1
-                },
+                sort: { _id: -1 },
                 limit: limit,
             })
             .toArray();
@@ -1415,43 +1425,34 @@ class MDStore {
         }, compact_updates(set_updates, unset_updates));
     }
 
-    find_blocks_of_chunks(chunk_ids) {
+    /**
+     * @param {nb.ID[]} chunk_ids
+     * @returns {Promise<nb.BlockSchemaDB[]>}
+     */
+    async find_blocks_of_chunks(chunk_ids) {
         if (!chunk_ids || !chunk_ids.length) return;
-        return this._blocks.col().find({
-                chunk: {
-                    $in: chunk_ids
-                },
+        const blocks = await this._blocks.col().find({
+                chunk: { $in: chunk_ids },
             })
-            .toArray()
-            .then(blocks => this.populate_nodes_for_blocks(blocks));
+            .toArray();
+        return blocks;
     }
 
-    load_blocks_for_chunks(chunks) {
+    async load_blocks_for_chunks(chunks) {
         if (!chunks || !chunks.length) return chunks;
-        return this._blocks.col().find({
-                chunk: {
-                    $in: mongo_utils.uniq_ids(chunks, '_id')
-                },
+        const blocks = await this._blocks.col().find({
+                chunk: { $in: mongo_utils.uniq_ids(chunks, '_id') },
                 deleted: null,
             })
-            .toArray()
-            .then(blocks => this.populate_nodes_for_blocks(blocks))
-            .then(blocks => {
-                // remove from the list blocks that their node is not found
-                // and consider these blocks just like deleted blocks
-                const orphan_blocks = _.remove(blocks, block => !block.node || !block.node._id);
-                if (orphan_blocks.length) console.log('ORPHAN BLOCKS (ignoring)', orphan_blocks);
-                const blocks_by_chunk = _.groupBy(blocks, 'chunk');
-                for (let i = 0; i < chunks.length; ++i) {
-                    chunks[i].blocks = blocks_by_chunk[chunks[i]._id] || [];
-                }
-                return chunks;
-            });
-    }
-
-    populate_nodes_for_blocks(blocks) {
-        return nodes_client.instance().populate_nodes_for_map(
-            blocks[0] && blocks[0].system, blocks, 'node');
+            .toArray();
+        const blocks_by_chunk = _.groupBy(blocks, 'chunk');
+        for (const chunk of chunks) {
+            const blocks_by_frag = _.groupBy(blocks_by_chunk[chunk._id], 'frag');
+            for (const frag of chunk.frags) {
+                frag.blocks = blocks_by_frag[frag._id];
+            }
+        }
+        return chunks;
     }
 
     iterate_node_chunks({ node_id, marker, limit }) {
@@ -1462,7 +1463,7 @@ class MDStore {
                 } : undefined,
                 deleted: null,
             }), {
-                fields: {
+                projection: {
                     _id: 1,
                     chunk: 1,
                     size: 1
@@ -1485,7 +1486,7 @@ class MDStore {
                 node: { $in: node_ids },
                 deleted: null,
             }), {
-                fields: {
+                projection: {
                     _id: 1,
                     chunk: 1,
                     size: 1
@@ -1505,13 +1506,16 @@ class MDStore {
     }
 
     count_blocks_of_nodes(node_ids) {
-        return this._blocks.col().count({
+        return this._blocks.col().countDocuments({
             node: { $in: node_ids },
             deleted: null,
         });
     }
 
-    delete_blocks_of_chunks(chunk_ids) {
+    /**
+     * @param {nb.ID[]} chunk_ids 
+     */
+    async delete_blocks_of_chunks(chunk_ids) {
         const delete_date = new Date();
         if (!chunk_ids || !chunk_ids.length) return;
         return this._blocks.col().updateMany({
@@ -1597,7 +1601,7 @@ class MDStore {
         };
         return this._blocks.col().find(query, {
                 limit: Math.min(limit, 1000),
-                fields: {
+                projection: {
                     _id: 1,
                     deleted: 1
                 }
@@ -1617,9 +1621,11 @@ class MDStore {
     }
 
     count_total_objects() {
-        return this._objects.col().count({});
+        return this._objects.col().countDocuments({}); // maybe estimatedDocumentCount()
     }
 }
+
+MDStore._instance = undefined;
 
 function compact(obj) {
     return _.omitBy(obj, _.isUndefined);
@@ -1680,5 +1686,15 @@ function sort_list_uploads_with_delimiter(a, b) {
     return 0;
 }
 
+/**
+ * @param {string} id_str 
+ * @returns {nb.ID}
+ */
+function make_md_id(id_str) {
+    return new mongodb.ObjectId(id_str);
+}
+
+
 // EXPORTS
 exports.MDStore = MDStore;
+exports.make_md_id = make_md_id;

@@ -65,4 +65,6 @@ class ChunkCoder extends stream.Transform {
     }
 }
 
+ChunkCoder.global_sem = undefined;
+
 module.exports = ChunkCoder;

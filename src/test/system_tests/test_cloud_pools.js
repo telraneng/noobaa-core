@@ -194,9 +194,8 @@ function verify_object_parts_on_cloud_nodes(replicas_in_tier, bucket_name, objec
                         });
 
                         if (blocks_correct && blocks_by_cloud_pool_name.blocks.length === obj_mapping_arg.parts.length) {
-                            console.log('verify_object_parts_on_cloud_nodes blocks found:', util.inspect(blocks_by_cloud_pool_name, {
-                                depth: null
-                            }));
+                            console.log('verify_object_parts_on_cloud_nodes blocks found:',
+                                util.inspect(blocks_by_cloud_pool_name, { depth: null }));
                             blocks_to_return = blocks_by_cloud_pool_name;
                         } else {
                             if (first_iteration) {
