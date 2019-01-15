@@ -82,12 +82,14 @@ class GetMapping {
     async find_dups() {
         if (!this.check_dups) return;
         if (!config.DEDUP_ENABLED) return;
-        await P.map(this.chunks_per_bucket, async (chunks, bucket_id) => {
+        await P.map(Object.values(this.chunks_per_bucket), async chunks => {
+            const bucket = chunks[0].bucket;
             const dedup_keys = _.compact(_.map(chunks,
                 chunk => chunk.digest_b64 && Buffer.from(chunk.digest_b64, 'base64')));
-            dbg.log3('GetMapping.find_dups', dedup_keys.length);
+            dbg.log0('GetMapping.find_dups', dedup_keys.length);
             if (!dedup_keys.length) return;
-            const dup_chunks = await MDStore.instance().find_chunks_by_dedup_key(bucket_id, dedup_keys);
+            const dup_chunks = await MDStore.instance().find_chunks_by_dedup_key(bucket, dedup_keys);
+            dbg.log0('GetMapping.dup_chunks', dup_chunks);
             for (const dup_chunk of dup_chunks) {
                 system_utils.prepare_chunk_for_mapping(dup_chunk);
             }
@@ -106,7 +108,7 @@ class GetMapping {
     }
 
     async do_allocations() {
-        await P.map(this.chunks_per_bucket, async chunks => {
+        await P.map(Object.values(this.chunks_per_bucket), async chunks => {
             const bucket = chunks[0].bucket;
             const total_size = _.sumBy(chunks, 'size');
             await this.prepare_chunks_group(chunks, this.move_to_tier);
@@ -125,6 +127,7 @@ class GetMapping {
     }
 
     async prepare_chunks_group(chunks, move_to_tier) {
+        if (!chunks.length) return;
         const bucket = chunks[0].bucket;
         await node_allocator.refresh_tiering_alloc(bucket.tiering);
         const tiering_status = node_allocator.get_tiering_status(bucket.tiering);
@@ -154,7 +157,7 @@ class GetMapping {
 
     async allocate_chunk(chunk) {
         const mapping = chunk.mapping;
-        const avoid_blocks = chunk.blocks.filter(block => block.node.node_type === 'BLOCK_STORE_FS');
+        const avoid_blocks = chunk.blocks ? chunk.blocks.filter(block => block.node.node_type === 'BLOCK_STORE_FS') : [];
         const avoid_nodes = avoid_blocks.map(block => String(block.node._id));
         const allocated_hosts = avoid_blocks.map(block => block.node.host_id);
         const preallocate_list = [];
@@ -164,6 +167,7 @@ class GetMapping {
         }
 
         for (const alloc of mapping.allocations) {
+            dbg.log0('JAJA alloc', alloc);
             const { frag, pools, /* sources */ } = alloc;
             // let source_block_info;
             // if (sources) {
@@ -176,7 +180,7 @@ class GetMapping {
                 dbg.warn(`GetMapping allocate_blocks: no nodes for allocation ` +
                     `avoid_nodes ${avoid_nodes.join(',')} ` +
                     `pools ${pools.join(',')} ` +
-                    `tier_for_write ${this.tier_for_write.name} ` +
+                    // `tier_for_write ${this.tier_for_write.name} ` +
                     `tiering_status ${util.inspect(this.tiering_status, { depth: null })} `);
                 // chunk.frags = saved_frags;
                 return false;
@@ -184,7 +188,7 @@ class GetMapping {
             const block = {
                 _id: MDStore.instance().make_md_id(),
             };
-            mapper.assign_node_to_block(block, node, chunk.system._id);
+            mapper.assign_node_to_block(block, node, chunk.bucket.system._id);
             const block_info = mapper.get_block_info(chunk, frag, block);
             alloc.block = block_info;
             if (node.node_type === 'BLOCK_STORE_FS') {

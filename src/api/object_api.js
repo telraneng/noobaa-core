@@ -52,6 +52,7 @@ module.exports = {
                 properties: {
                     obj_id: { objectid: true },
                     tier: { objectid: true },
+                    bucket: { objectid: true },
                     chunk_split_config: { $ref: 'common_api#/definitions/chunk_split_config' },
                     chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },
                 }

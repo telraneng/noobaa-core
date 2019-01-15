@@ -148,7 +148,7 @@ function setup({ incomplete_rpc_coverage } = {}) {
             .then(() => attach_pool_to_bucket(SYSTEM, 'first.bucket', config.NEW_SYSTEM_POOL_NAME))
             .then(() => announce('init_test_nodes()'))
             .delay(3000)
-            // .then(() => init_test_nodes(rpc_client, SYSTEM, 10))
+            .then(() => init_test_nodes(rpc_client, SYSTEM, 10))
             .then(() => announce(`coretest ready... (took ${((Date.now() - start) / 1000).toFixed(1)} sec)`));
     });
 

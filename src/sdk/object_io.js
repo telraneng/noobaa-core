@@ -109,6 +109,7 @@ class ObjectIO {
             const create_reply = await params.client.object.create_object_upload(create_params);
             params.obj_id = create_reply.obj_id;
             params.tier = create_reply.tier;
+            params.bucket_id = create_reply.bucket;
             params.chunk_split_config = create_reply.chunk_split_config;
             params.chunk_coder_config = create_reply.chunk_coder_config;
             complete_params.obj_id = create_reply.obj_id;
@@ -350,8 +351,9 @@ class ObjectIO {
                 // since we already coded it into the fragments
                 chunk.data = undefined;
                 chunk.tier = params.tier;
+                chunk.bucket = params.bucket_id;
                 chunk.parts = [part];
-                dbg.log0('UPLOAD: part', part.desc);
+                dbg.log0('UPLOAD: part', part.desc, chunk);
             }
             const m = new map_client.MapClient({
                 chunks,

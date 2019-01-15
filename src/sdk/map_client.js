@@ -21,6 +21,7 @@ const PART_ATTRS = [
 ];
 const CHUNK_ATTRS = [
     'tier',
+    'bucket',
     'chunk_coder_config',
     'size',
     'compress_size',

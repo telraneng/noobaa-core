@@ -83,9 +83,12 @@ async function create_object_upload(req) {
     await MDStore.instance().insert_object(info);
     object_md_cache.put_in_cache(String(info._id), info);
 
+    dbg.log0('JAJAJAJA bucket: req.bucket._id', req.bucket._id);
+
     return {
         obj_id: info._id,
         tier: tier._id,
+        bucket: req.bucket._id,
         chunk_split_config: req.bucket.tiering.chunk_split_config,
         chunk_coder_config: tier.chunk_config.chunk_coder_config,
     };
