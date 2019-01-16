@@ -575,8 +575,8 @@ function get_part_info(part, adminfo, tiering_status, location_info) {
 }
 
 function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
-    const bucket = system_store.data.get_by_id(chunk.bucket);
-    const mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status);
+    const bucket = chunk.bucket;
+    const mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status, location_info);
     const allocations_by_frag_id = _.groupBy(mapping.allocations, allocation => String(allocation.frag._id));
     const deletions_by_frag_id = _.groupBy(mapping.deletions, deletion => String(deletion.frag));
     const future_deletions_by_frag_id = _.groupBy(mapping.future_deletions, deletion => String(deletion.frag));
@@ -595,7 +595,7 @@ function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
         bucket: bucket._id,
         tier: chunk.tier._id,
         dup_chunk: chunk.dup_chunk,
-        missing_frags: mapping.missing_frags,
+        missing_frags: Boolean(mapping.missing_frags),
         chunk_coder_config: chunk.chunk_coder_config,
         size: chunk.size,
         frag_size: chunk.frag_size,
@@ -645,7 +645,7 @@ function get_block_info(chunk, frag, block, adminfo) {
         const node = block.node;
         const system = system_store.data.get_by_id(block.system);
         const pool = system.pools_by_name[node.pool];
-        const bucket = system_store.data.get_by_id(chunk.bucket);
+        const bucket = chunk.bucket;
 
         // Setting mirror_group for the block:
         // We return mirror_group undefined to mark blocks that are no longer relevant to the tiering policy,
@@ -804,4 +804,5 @@ exports.get_chunk_info = get_chunk_info;
 exports.get_frag_info = get_frag_info;
 exports.get_block_info = get_block_info;
 exports.get_block_md = get_block_md;
+exports.get_alloc_info = get_alloc_info;
 exports.should_rebuild_chunk_to_local_mirror = should_rebuild_chunk_to_local_mirror;

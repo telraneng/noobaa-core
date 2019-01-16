@@ -243,8 +243,9 @@ async function get_mapping(req) {
             move_to_tier: req.rpc_params.move_to_tier,
             check_dups: req.rpc_params.check_dups,
         });
-        const res = await get_map.run();
-        return res;
+        const chunks = await get_map.run();
+        // dbg.log0('JAJAJA get_mapping chunks', util.inspect(chunks, { depth: null }));
+        return { chunks };
     } catch (err) {
         dbg.error('object_server.get_mapping: ERROR', err.stack || err);
         throw err;
@@ -261,13 +262,13 @@ async function put_mapping(req) {
     throw_if_maintenance(req);
     try {
         // const obj = await find_cached_object_upload(req);
+        // dbg.log0('JAJAJA put_mapping chunks', util.inspect(req.rpc_params.chunks, { depth: null }));
         const put_map = new map_server.PutMapping({
             chunks: req.rpc_params.chunks,
             location_info: req.rpc_params.location_info,
             move_to_tier: req.rpc_params.move_to_tier,
         });
-        const res = await put_map.run();
-        return res;
+        await put_map.run();
     } catch (err) {
         dbg.error('object_server.put_mapping: ERROR', err.stack || err);
         throw err;
@@ -294,6 +295,7 @@ async function create_multipart(req) {
     return {
         multipart_id: multipart._id,
         tier: tier._id,
+        bucket: req.bucket._id,
         chunk_split_config: req.bucket.tiering.chunk_split_config,
         chunk_coder_config: tier.chunk_config.chunk_coder_config,
     };

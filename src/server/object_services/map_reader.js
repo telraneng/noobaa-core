@@ -100,6 +100,10 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
     const chunks = _.map(parts, 'chunk');
     const tiering_status_by_bucket_id = {};
 
+    for (const chunk of chunks) {
+        system_utils.prepare_chunk_for_mapping(chunk);
+    }
+
     await _load_chunk_mappings(chunks, tiering_status_by_bucket_id);
 
 
@@ -143,9 +147,8 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
     }
 
     return _.map(parts, part => {
-        system_utils.prepare_chunk_for_mapping(part.chunk);
         const part_info = mapper.get_part_info(
-            part, adminfo, tiering_status_by_bucket_id[part.chunk.bucket], location_info
+            part, adminfo, tiering_status_by_bucket_id[part.chunk.bucket._id], location_info
         );
         if (set_obj) {
             part_info.obj = part.obj;
@@ -155,13 +158,13 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
 }
 
 async function _load_chunk_mappings(chunks, tiering_status_by_bucket_id) {
-    const chunks_buckets = _.uniq(_.map(chunks, chunk => String(chunk.bucket)));
+    const chunks_buckets = _.uniq(_.map(chunks, chunk => String(chunk.bucket._id)));
     return P.join(
         MDStore.instance().load_blocks_for_chunks(chunks),
         P.map(chunks_buckets, async bucket_id => {
             const bucket = system_store.data.get_by_id(bucket_id);
             if (!bucket) {
-                console.error(`read_parts_mappings: Bucket ${bucket_id} does not exist`);
+                console.error(`read_parts_mappings: Bucket ${bucket_id} does not exist`, chunks_buckets);
                 return;
             }
             await node_allocator.refresh_tiering_alloc(bucket.tiering);

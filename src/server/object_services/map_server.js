@@ -12,6 +12,7 @@ const mapper = require('./mapper');
 const MDStore = require('./md_store').MDStore;
 const time_utils = require('../../util/time_utils');
 const size_utils = require('../../util/size_utils');
+const map_client = require('../../sdk/map_client');
 const server_rpc = require('../server_rpc');
 const auth_server = require('../common_services/auth_server');
 const mongo_utils = require('../../util/mongo_utils');
@@ -53,7 +54,6 @@ class GetMapping {
         this.move_to_tier = move_to_tier && system_store.data.get_by_id(move_to_tier);
         this.check_dups = check_dups;
 
-        dbg.warn('GGG GetMapping: ctor1', util.inspect(this));
         for (const chunk of chunks) {
             system_utils.prepare_chunk_for_mapping(chunk);
         }
@@ -61,18 +61,22 @@ class GetMapping {
 
         // assert move_to_tier is only used for chunks on the same bucket
         if (this.move_to_tier) assert.strictEqual(Object.keys(this.chunks_per_bucket).length, 1);
-        dbg.warn('GGG GetMapping: ctor2', util.inspect(this));
     }
 
     async run() {
         const millistamp = time_utils.millistamp();
-        dbg.warn('GGG GetMapping: start');
+        dbg.log1('GetMapping: start');
         try {
             await this.find_dups();
             await this.do_allocations();
             dbg.log0('GetMapping: DONE. chunks', this.chunks.length,
                 'took', time_utils.millitook(millistamp));
-            return this.chunks;
+            return this.chunks.map(chunk => {
+                const c = map_client.pick_chunk_attrs(chunk);
+                c.bucket = chunk.bucket._id;
+                c.tier = chunk.tier._id;
+                return c;
+            });
         } catch (err) {
             dbg.error('GetMapping: ERROR', err.stack || err);
             throw err;
@@ -118,7 +122,8 @@ class GetMapping {
                 done = await this.allocate_chunks(chunks);
                 map_reporter.add_event(`allocate_chunks(${bucket.name})`, total_size, Date.now() - start_alloc_time);
                 if (!done) {
-                    await P.map(_.uniqBy(chunks, 'tier'), tier => ensure_room_in_tier(tier, bucket));
+                    const uniq_tiers = _.uniq(_.map(chunks, 'tier'));
+                    await P.map(uniq_tiers, tier => ensure_room_in_tier(tier, bucket));
                     // TODO Decide if we want to update the chunks mappings when looping
                     // await this.prepare_chunks_group(chunks, bucket);
                 }
@@ -167,7 +172,7 @@ class GetMapping {
         }
 
         for (const alloc of mapping.allocations) {
-            dbg.log0('JAJA alloc', alloc);
+            // dbg.log0('JAJA alloc', alloc);
             const { frag, pools, /* sources */ } = alloc;
             // let source_block_info;
             // if (sources) {
@@ -191,6 +196,8 @@ class GetMapping {
             mapper.assign_node_to_block(block, node, chunk.bucket.system._id);
             const block_info = mapper.get_block_info(chunk, frag, block);
             alloc.block = block_info;
+            frag.allocations = frag.allocations || [];
+            frag.allocations.push(mapper.get_alloc_info(alloc));
             if (node.node_type === 'BLOCK_STORE_FS') {
                 avoid_nodes.push(String(node._id));
                 allocated_hosts.push(node.host_id);
@@ -236,6 +243,7 @@ class GetMapping {
         // } else {
         //     frag.blocks.push(block_info);
         // }
+        return true;
     }
 
 
@@ -291,9 +299,9 @@ class PutMapping {
 
     add_new_chunk(chunk) {
         const chunk_id = MDStore.instance().make_md_id();
-        const bucket = system_store.data.get_by_id(chunk.bucket);
+        const bucket = chunk.bucket;
         const digest = chunk.digest_b64 && Buffer.from(chunk.digest_b64, 'base64');
-        const tier = this.move_to_tier || system_store.data.get_by_id(chunk.tier);
+        const tier = this.move_to_tier || chunk.tier;
         const chunk_config = _.find(bucket.system.chunk_configs_by_id,
             c => _.isEqual(c.chunk_coder_config, chunk.chunk_coder_config))._id;
         this.add_new_parts(chunk.parts, chunk, chunk_id);
@@ -314,8 +322,10 @@ class PutMapping {
             cipher_auth_tag: chunk.cipher_auth_tag_b64 && Buffer.from(chunk.cipher_auth_tag_b64, 'base64'),
             frags: _.map(chunk.frags, frag => {
                 const frag_id = MDStore.instance().make_md_id();
-                for (const { block } of frag.allocations) {
-                    this.add_new_block(block, chunk.frag_size, frag_id, chunk_id, bucket);
+                if (frag.allocations) {
+                    for (const { block } of frag.allocations) {
+                        this.add_new_block(block, chunk.frag_size, frag_id, chunk_id, bucket);
+                    }
                 }
                 assert.strictEqual(frag.blocks, undefined);
                 assert.strictEqual(frag.deletions, undefined);
@@ -375,9 +385,9 @@ class PutMapping {
         const now = Date.now();
         const block_id = MDStore.instance().make_md_id(block.block_md.id);
         const block_id_time = block_id.getTimestamp().getTime();
-        if (block_id_time < now.getTime() - (config.MD_GRACE_IN_MILLISECONDS - config.MD_AGGREGATOR_INTERVAL)) {
+        if (block_id_time < now - (config.MD_GRACE_IN_MILLISECONDS - config.MD_AGGREGATOR_INTERVAL)) {
             dbg.error('PutMapping: A big gap was found between id creation and addition to DB:',
-                block, bucket.name, block_id_time, now.getTime());
+                block, bucket.name, block_id_time, now);
         }
         if (block_id_time < bucket.storage_stats.last_update + config.MD_AGGREGATOR_INTERVAL) {
             dbg.error('PutMapping: A big gap was found between id creation and bucket last update:',

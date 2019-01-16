@@ -159,6 +159,7 @@ class ObjectIO {
             const multipart_reply = await params.client.object.create_multipart(create_params);
             params.multipart_id = multipart_reply.multipart_id;
             params.tier = multipart_reply.tier;
+            params.bucket_id = multipart_reply.bucket;
             params.chunk_split_config = multipart_reply.chunk_split_config;
             params.chunk_coder_config = multipart_reply.chunk_coder_config;
             complete_params.multipart_id = multipart_reply.multipart_id;
@@ -333,6 +334,7 @@ class ObjectIO {
             for (const chunk of chunks) {
                 const part = {
                     chunk,
+                    obj_id: params.obj_id,
                     millistamp: time_utils.millistamp(),
                     bucket: params.bucket,
                     key: params.key,

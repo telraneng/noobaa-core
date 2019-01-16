@@ -194,6 +194,7 @@ module.exports = {
                 required: ['multipart_id', 'chunk_split_config', 'chunk_coder_config'],
                 properties: {
                     multipart_id: { objectid: true },
+                    bucket: { objectid: true },
                     tier: { objectid: true },
                     chunk_split_config: { $ref: 'common_api#/definitions/chunk_split_config' },
                     chunk_coder_config: { $ref: 'common_api#/definitions/chunk_coder_config' },

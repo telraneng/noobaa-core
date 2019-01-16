@@ -18,10 +18,16 @@ const PART_ATTRS = [
     'end',
     'seq',
     'multipart_id',
+    'obj_id',
 ];
 const CHUNK_ATTRS = [
+    '_id',
     'tier',
     'bucket',
+    'frags',
+    'missing_frags',
+    'dup_chunk',
+    'parts',
     'chunk_coder_config',
     'size',
     'compress_size',
@@ -36,6 +42,9 @@ const FRAG_ATTRS = [
     'parity_index',
     'lrc_index',
     'digest_b64',
+    'allocations',
+    'deletions',
+    'future_deletions',
 ];
 
 class MapClient {
@@ -84,12 +93,13 @@ class MapClient {
      * - make_room_in_tier
      */
     async get_mapping() {
-        this.chunks_mapping = await this.rpc_client.object.get_mapping({
-            chunks: this.chunks.map(get_chunk_info),
+        const { chunks } = await this.rpc_client.object.get_mapping({
+            chunks: this.chunks.map(pick_chunk_attrs),
             location_info: this.location_info,
             move_to_tier: this.move_to_tier,
             check_dups: this.check_dups,
         });
+        this.chunks_mapping = chunks;
         for (let i = 0; i < this.chunks.length; ++i) {
             set_blocks_to_maps(this.chunks[i], this.chunks_mapping[i]);
         }
@@ -102,7 +112,7 @@ class MapClient {
      */
     async put_mapping() {
         await this.rpc_client.object.put_mapping({
-            chunks: this.chunks_mapping,
+            chunks: this.chunks_mapping.map(pick_chunk_attrs),
             move_to_tier: this.move_to_tier,
         });
     }
@@ -138,7 +148,7 @@ class MapClient {
                 }
                 dbg.warn('UPLOAD:', 'write part reallocate on ERROR', err);
                 const res = await this.rpc_client.object.get_mapping({
-                    chunks: [get_chunk_info(chunk)],
+                    chunks: [pick_chunk_attrs(chunk)],
                     location_info: this.location_info,
                     move_to_tier: this.move_to_tier,
                     check_dups: this.check_dups,
@@ -284,7 +294,7 @@ class MapClient {
 
 }
 
-function get_chunk_info(chunk) {
+function pick_chunk_attrs(chunk) {
     const c = _.pick(chunk, CHUNK_ATTRS);
     c.frags = _.map(c.frags, frag => _.pick(frag, FRAG_ATTRS));
     c.parts = _.map(c.parts, part => _.pick(part, PART_ATTRS));
@@ -292,9 +302,9 @@ function get_chunk_info(chunk) {
 }
 
 function set_blocks_to_maps(chunk, chunk_mapping) {
-    for (const frag of chunk.frags) {
+    for (const frag of chunk_mapping.frags) {
         const frag_with_data = _.find(
-            chunk_mapping.frags,
+            chunk.frags,
             _.matches(_.pick(frag, 'data_index', 'parity_index', 'lrc_index'))
         );
         frag.block = frag_with_data.block;
@@ -302,3 +312,4 @@ function set_blocks_to_maps(chunk, chunk_mapping) {
 }
 
 exports.MapClient = MapClient;
+exports.pick_chunk_attrs = pick_chunk_attrs;
