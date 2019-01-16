@@ -576,10 +576,16 @@ function get_part_info(part, adminfo, tiering_status, location_info) {
 
 function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
     const bucket = chunk.bucket;
-    const mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status, location_info);
-    const allocations_by_frag_id = _.groupBy(mapping.allocations, allocation => String(allocation.frag._id));
-    const deletions_by_frag_id = _.groupBy(mapping.deletions, deletion => String(deletion.frag));
-    const future_deletions_by_frag_id = _.groupBy(mapping.future_deletions, deletion => String(deletion.frag));
+    let mapping;
+    let allocations_by_frag_id;
+    let deletions_by_frag_id;
+    let future_deletions_by_frag_id;
+    if (tiering_status) {
+        mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status, location_info);
+        allocations_by_frag_id = _.groupBy(mapping.allocations, allocation => String(allocation.frag._id));
+        deletions_by_frag_id = _.groupBy(mapping.deletions, deletion => String(deletion.frag));
+        future_deletions_by_frag_id = _.groupBy(mapping.future_deletions, deletion => String(deletion.frag));
+    }
     const blocks_by_frag_id = _.groupBy(chunk.blocks, 'frag');
     if (adminfo) {
         if (!mapping.accessible) {
@@ -595,7 +601,7 @@ function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
         bucket: bucket._id,
         tier: chunk.tier._id,
         dup_chunk: chunk.dup_chunk,
-        missing_frags: Boolean(mapping.missing_frags),
+        missing_frags: Boolean(mapping && mapping.missing_frags),
         chunk_coder_config: chunk.chunk_coder_config,
         size: chunk.size,
         frag_size: chunk.frag_size,
