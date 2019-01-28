@@ -1,6 +1,8 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
+/// <reference path="../api/nb.d.ts" />
+
 const _ = require('lodash');
 const util = require('util');
 
@@ -49,6 +51,23 @@ const FRAG_ATTRS = [
 
 class MapClient {
 
+    /**
+     * @param {Object} args
+     * @param {nb.ChunkInfo[]} args.chunks
+     * @param {nb.LocationInfo} [args.location_info]
+     * @param {nb.Tier} [args.move_to_tier]
+     * @param {boolean} [args.check_dups]
+     * @param {Object} args.rpc_client
+     * @param {string} [args.desc]
+     * @param {function} args.read_frags
+     * @param {function} args.report_error
+     * @param {nb.Semaphore} args.block_write_sem_global
+     * @param {nb.Semaphore} args.block_replicate_sem_global
+     * @param {nb.Semaphore} args.block_read_sem_global
+     * @param {nb.Semaphore} args.block_write_sem_agent
+     * @param {nb.Semaphore} args.block_replicate_sem_agent
+     * @param {nb.Semaphore} args.block_read_sem_agent
+     */
     constructor({
         chunks,
         location_info,
@@ -68,7 +87,7 @@ class MapClient {
         this.chunks = chunks;
         this.location_info = location_info;
         this.move_to_tier = move_to_tier;
-        this.check_dups = check_dups;
+        this.check_dups = Boolean(check_dups);
         this.rpc_client = rpc_client;
         this.desc = desc;
         this.read_frags = read_frags;
@@ -93,12 +112,15 @@ class MapClient {
      * - make_room_in_tier
      */
     async get_mapping() {
+
         const { chunks } = await this.rpc_client.object.get_mapping({
             chunks: this.chunks.map(pick_chunk_attrs),
             location_info: this.location_info,
             move_to_tier: this.move_to_tier,
             check_dups: this.check_dups,
         });
+
+        /** @type {nb.ChunkInfo[]} */
         this.chunks_mapping = chunks;
         for (let i = 0; i < this.chunks.length; ++i) {
             set_blocks_to_maps(this.chunks[i], this.chunks_mapping[i]);
@@ -122,11 +144,14 @@ class MapClient {
         this.chunks_mapping = await P.map(chunks, async chunk => this.process_chunk(chunk));
     }
 
+    /**
+     * @param {nb.ChunkInfo} chunk 
+     * @returns {Promise<nb.ChunkInfo>}
+     */
     async process_chunk(chunk) {
         // chunk[util.inspect.custom] = custom_inspect_chunk;
 
-        dbg.log0('MapBuilder.build_chunks: allocations needed for chunk',
-            chunk, _.map(chunk.objects, 'key'));
+        dbg.log0('MapBuilder.build_chunks: allocations needed for chunk', chunk);
 
         if (chunk.dup_chunk) return chunk;
 
@@ -160,6 +185,9 @@ class MapClient {
         return chunk;
     }
 
+    /**
+     * @param {nb.ChunkInfo} chunk 
+     */
     async read_entire_chunk(chunk) {
         const part = { ...chunk.parts[0], desc: { chunk: chunk._id } };
 
@@ -182,6 +210,10 @@ class MapClient {
         // set_blocks_to_maps(chunk, chunk_info);
     }
 
+    /**
+     * @param {nb.ChunkInfo} chunk 
+     * @param {nb.FragInfo} frag 
+     */
     async process_frag(chunk, frag) {
         if (!frag.allocations) return;
         if (frag.accessible_blocks) {

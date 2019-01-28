@@ -183,13 +183,14 @@ class MapBuilder {
             const chunks_info = this.chunks.map(chunk => mapper.get_chunk_info(chunk));
             const m = new map_client.MapClient({
                 chunks: chunks_info,
-                move_to_tier: this.move_to_tier,
+                move_to_tier: this.move_to_tier._id,
                 rpc_client: server_rpc.rpc.new_client({
                     auth_token: auth_server.make_auth_token({
                         system_id: system_store.data.systems[0]._id,
                         role: 'admin',
                     })
                 }),
+                
             });
             await m.run();
 

@@ -117,6 +117,9 @@ config.IO_SEMAPHORE_CAP = Math.floor(
         os.totalmem() / config.IO_MEM_SEMAPHORE / config.ENDPOINT_FORKS_COUNT)
 );
 
+config.ERROR_INJECTON_ON_WRITE = 0;
+config.ERROR_INJECTON_ON_READ = 0;
+
 /////////////////////
 //NODES MONITORING //
 /////////////////////
