@@ -83,8 +83,6 @@ async function create_object_upload(req) {
     await MDStore.instance().insert_object(info);
     object_md_cache.put_in_cache(String(info._id), info);
 
-    dbg.log0('JAJAJAJA bucket: req.bucket._id', req.bucket._id);
-
     return {
         obj_id: info._id,
         tier: tier._id,
@@ -244,7 +242,6 @@ async function get_mapping(req) {
             check_dups: req.rpc_params.check_dups,
         });
         const chunks = await get_map.run();
-        // dbg.log0('JAJAJA get_mapping chunks', util.inspect(chunks, { depth: null }));
         return { chunks };
     } catch (err) {
         dbg.error('object_server.get_mapping: ERROR', err.stack || err);
@@ -262,7 +259,6 @@ async function put_mapping(req) {
     throw_if_maintenance(req);
     try {
         // const obj = await find_cached_object_upload(req);
-        // dbg.log0('JAJAJA put_mapping chunks', util.inspect(req.rpc_params.chunks, { depth: null }));
         const put_map = new map_server.PutMapping({
             chunks: req.rpc_params.chunks,
             location_info: req.rpc_params.location_info,

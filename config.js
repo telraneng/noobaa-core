@@ -162,7 +162,7 @@ config.REBUILD_NODE_BATCH_DELAY = 50;
 // TODO: Temporary using the same number but later on they will be different cellings
 config.MIN_TIER_FREE_THRESHOLD = 100 * 1024 * 1024;
 config.MAX_TIER_FREE_THRESHOLD = 100 * 1024 * 1024;
-config.ENOUGH_ROOM_IN_TIER_THRESHOLD = 100 * 1024 * 1024;
+config.ENOUGH_ROOM_IN_TIER_THRESHOLD = 200 * 1024 * 1024;
 
 config.CHUNK_MOVE_LIMIT = 10;
 

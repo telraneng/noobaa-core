@@ -6,7 +6,7 @@ const util = require('util');
 
 const P = require('../../util/promise');
 const dbg = require('../../util/debug_module')(__filename);
-// const config = require('../../../config.js');
+const config = require('../../../config.js');
 const mapper = require('./mapper');
 const MDStore = require('./md_store').MDStore;
 const js_utils = require('../../util/js_utils');
@@ -19,6 +19,9 @@ const auth_server = require('../common_services/auth_server');
 const system_store = require('../system_services/system_store').get_instance();
 const node_allocator = require('../node_services/node_allocator');
 const system_utils = require('../utils/system_utils');
+const Semaphore = require('../../util/semaphore');
+const KeysSemaphore = require('../../util/keys_semaphore');
+
 
 const builder_lock = new KeysLock();
 
@@ -34,6 +37,18 @@ const builder_lock = new KeysLock();
  *
  */
 class MapBuilder {
+
+    constructor() {
+        this.chunks = [];
+        // global semaphores shared by all agents
+        this._block_write_sem_global = new Semaphore(config.IO_WRITE_CONCURRENCY_GLOBAL);
+        this._block_replicate_sem_global = new Semaphore(config.IO_REPLICATE_CONCURRENCY_GLOBAL);
+        this._block_read_sem_global = new Semaphore(config.IO_READ_CONCURRENCY_GLOBAL);
+        // semphores specific to an agent
+        this._block_write_sem_agent = new KeysSemaphore(config.IO_WRITE_CONCURRENCY_AGENT);
+        this._block_replicate_sem_agent = new KeysSemaphore(config.IO_REPLICATE_CONCURRENCY_AGENT);
+        this._block_read_sem_agent = new KeysSemaphore(config.IO_READ_CONCURRENCY_AGENT);
+    }
 
     async run(chunk_ids, move_to_tier) {
         this.move_to_tier = move_to_tier;
@@ -87,6 +102,7 @@ class MapBuilder {
     // TODO: We can release the unrelevant chunks from the surround_keys
     // This will allow other batches to run if they wait on non existing chunks
     async reload_chunks(chunk_ids) {
+        /** @type {Array} */
         this.chunks = await MDStore.instance().find_chunks_by_ids(chunk_ids);
         dbg.log1('MapBuilder.reload_chunks:', this.chunks);
     }
@@ -116,10 +132,10 @@ class MapBuilder {
             system_utils.prepare_chunk_for_mapping(chunk);
 
             try {
-                if (!chunk.parts || !chunk.parts.length) throw new Error('No valid parts are pointing to chunk', chunk._id);
-                if (!chunk.objects || !chunk.objects.length) throw new Error('No valid objects are pointing to chunk', chunk._id);
+                if (!chunk.parts || !chunk.parts.length) throw new Error('No valid parts are pointing to chunk' + chunk._id);
+                if (!chunk.objects || !chunk.objects.length) throw new Error('No valid objects are pointing to chunk' + chunk._id);
 
-                await this.populate_chunk_bucket(chunk);
+                if (!chunk.bucket._id) await this.populate_chunk_bucket(chunk);
                 if (!chunk.tier._id) { // tier was deleted?
                     await node_allocator.refresh_tiering_alloc(chunk.bucket.tiering);
                     const tiering_status = node_allocator.get_tiering_status(chunk.bucket.tiering);
@@ -145,23 +161,21 @@ class MapBuilder {
         }
     }
 
-    populate_chunk_bucket(chunk) {
+    async populate_chunk_bucket(chunk) {
         let bucket = system_store.data.get_by_id(chunk.bucket);
         const object_bucket_ids = mongo_utils.uniq_ids(chunk.objects, 'bucket');
         const valid_buckets = _.compact(object_bucket_ids.map(bucket_id => system_store.data.get_by_id(bucket_id)));
         if (!valid_buckets.length) {
-            return system_store.data.get_by_id_include_deleted(chunk.bucket, 'buckets')
-                .then(deleted_bucket => {
-                    if (deleted_bucket) {
-                        dbg.warn(`Chunk ${chunk._id} is held by a deleted bucket ${deleted_bucket.name} marking for deletion`);
-                        chunk.bucket = deleted_bucket.record;
-                        this.objects_to_delete.push(_.filter(chunk.objects, obj => _.isEqual(obj.bucket, deleted_bucket.record._id)));
-                        return;
-                    }
-                    //We prefer to leave the option for manual fix if we'll need it
-                    dbg.error(`Chunk ${chunk._id} is held by ${chunk.objects.length} invalid objects. The following objects have no valid bucket`, chunk.objects);
-                    throw new Error('Chunk held by invalid objects');
-                });
+            const deleted_bucket = await system_store.data.get_by_id_include_deleted(chunk.bucket, 'buckets');
+            if (deleted_bucket) {
+                dbg.warn(`Chunk ${chunk._id} is held by a deleted bucket ${deleted_bucket.name} marking for deletion`);
+                chunk.bucket = deleted_bucket.record;
+                this.objects_to_delete.push(_.filter(chunk.objects, obj => _.isEqual(obj.bucket, deleted_bucket.record._id)));
+                return;
+            }
+            //We prefer to leave the option for manual fix if we'll need it
+            dbg.error(`Chunk ${chunk._id} is held by ${chunk.objects.length} invalid objects. The following objects have no valid bucket`, chunk.objects);
+            throw new Error('Chunk held by invalid objects');
         }
         if (valid_buckets.length > 1) {
             dbg.error(`Chunk ${chunk._id} is held by objects from ${object_bucket_ids.length} different buckets`);
@@ -180,21 +194,42 @@ class MapBuilder {
 
     async build_chunks() {
         try {
-            const chunks_info = this.chunks.map(chunk => mapper.get_chunk_info(chunk));
-            const m = new map_client.MapClient({
+            const chunks_info = this.chunks.map(chunk => {
+                const chunk_info = mapper.get_chunk_info(chunk);
+                dbg.warn('JAJA MapBuilder chunk', util.inspect(chunk, { breakLength: 100000 }));
+                dbg.warn('JAJA MapBuilder chunk_info', util.inspect(chunk_info, { breakLength: 100000 }));
+                return chunk_info;
+            });
+            const mc = new map_client.MapClient({
                 chunks: chunks_info,
-                move_to_tier: this.move_to_tier._id,
+                move_to_tier: this.move_to_tier && this.move_to_tier._id,
                 rpc_client: server_rpc.rpc.new_client({
                     auth_token: auth_server.make_auth_token({
                         system_id: system_store.data.systems[0]._id,
                         role: 'admin',
                     })
                 }),
-                
+                desc: 'MapBuilder',
+                read_frags: () => 1,
+                report_error: () => 1,
+                block_write_sem_global: this._block_write_sem_global,
+                block_replicate_sem_global: this._block_replicate_sem_global,
+                block_read_sem_global: this._block_read_sem_global,
+                block_write_sem_agent: this._block_write_sem_agent,
+                block_replicate_sem_agent: this._block_replicate_sem_agent,
+                block_read_sem_agent: this._block_read_sem_agent,
             });
-            await m.run();
+            await mc.run();
 
-            // TODO mark errors on chunks!
+            if (mc.had_errors) {
+                this.had_errors = true;
+                for (let i = 0; i < this.chunks.length; ++i) {
+                    if (mc.chunks_mapping[i].had_errors) {
+                        dbg.error('MapBuilder.build_chunks: mark errors on chunk', mc.chunks_mapping[i]._id);
+                        this.chunks[i].had_errors = true;
+                    }
+                }
+            }
 
         } catch (err) {
             // we make sure to catch and continue here since we process a batch

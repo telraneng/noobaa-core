@@ -47,6 +47,7 @@ const FRAG_ATTRS = [
     'allocations',
     'deletions',
     'future_deletions',
+    'blocks',
 ];
 
 class MapClient {
@@ -64,9 +65,9 @@ class MapClient {
      * @param {nb.Semaphore} args.block_write_sem_global
      * @param {nb.Semaphore} args.block_replicate_sem_global
      * @param {nb.Semaphore} args.block_read_sem_global
-     * @param {nb.Semaphore} args.block_write_sem_agent
-     * @param {nb.Semaphore} args.block_replicate_sem_agent
-     * @param {nb.Semaphore} args.block_read_sem_agent
+     * @param {nb.KeysSemaphore} args.block_write_sem_agent
+     * @param {nb.KeysSemaphore} args.block_replicate_sem_agent
+     * @param {nb.KeysSemaphore} args.block_read_sem_agent
      */
     constructor({
         chunks,
@@ -151,7 +152,6 @@ class MapClient {
     async process_chunk(chunk) {
         // chunk[util.inspect.custom] = custom_inspect_chunk;
 
-        dbg.log0('MapBuilder.build_chunks: allocations needed for chunk', chunk);
 
         if (chunk.dup_chunk) return chunk;
 
@@ -178,7 +178,6 @@ class MapClient {
                     move_to_tier: this.move_to_tier,
                     check_dups: this.check_dups,
                 });
-                chunk = res[0];
                 if (chunk.dup_chunk) return chunk;
             }
         }
@@ -216,14 +215,6 @@ class MapClient {
      */
     async process_frag(chunk, frag) {
         if (!frag.allocations) return;
-        if (frag.accessible_blocks) {
-            let next_source = 'TODO: random index in frag.accessible_blocks';
-            await P.map(frag.allocations, async alloc => {
-                const source_block = frag.accessible_blocks[next_source];
-                next_source = (next_source + 1) % frag.accessible_blocks.length;
-                return this.retry_replicate_blocks(source_block, alloc.block);
-            });
-        } else if (frag.block) {
             const first_alloc = frag.allocations[0];
             const rest_allocs = frag.allocations.slice(1);
             await this.retry_write_block(first_alloc.block, frag.block);

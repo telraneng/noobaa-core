@@ -148,6 +148,10 @@ class GetMapping {
             }
             chunk.tier = selected_tier;
             chunk.mapping = mapper.map_chunk(chunk, selected_tier, bucket.tiering, tiering_status, this.location_info);
+            if (chunk.mapping.missing_frags) {
+                chunk.missing_frags = true;
+            }
+            dbg.log0('JAJA GetMapping:', inspect(_.omit(chunk.mapping, 'tier')));
         }
     }
 
@@ -168,18 +172,11 @@ class GetMapping {
         const preallocate_list = [];
 
         for (const frag of chunk.frags) {
-            frag.blocks = [];
+            frag.allocations = [];
         }
 
         for (const alloc of mapping.allocations) {
-            // dbg.log0('JAJA alloc', alloc);
             const { frag, pools, /* sources */ } = alloc;
-            // let source_block_info;
-            // if (sources) {
-            //     const source_block = sources.accessible_blocks[sources.next_source];
-            //     sources.next_source = (sources.next_source + 1) % sources.accessible_blocks.length;
-            //     source_block_info = mapper.get_block_md(chunk, frag, source_block);
-            // }
             const node = node_allocator.allocate_node(pools, avoid_nodes, allocated_hosts);
             if (!node) {
                 dbg.warn(`GetMapping allocate_blocks: no nodes for allocation ` +
@@ -271,7 +268,7 @@ class PutMapping {
 
     async run() {
         const millistamp = time_utils.millistamp();
-        dbg.log1('PutMapping: start');
+        dbg.log0('PutMapping: start');
         try {
             this.add_chunks();
             await this.update_db();
@@ -287,7 +284,7 @@ class PutMapping {
     add_chunks() {
         for (const chunk of this.chunks) {
             system_utils.prepare_chunk_for_mapping(chunk);
-            if (chunk.dup_chunk) {
+            if (chunk.dup_chunk) { // duplicated chunk
                 this.add_new_parts(chunk.parts, chunk, chunk.dup_chunk);
             } else if (chunk._id) {
                 this.add_existing_chunk(chunk);
@@ -305,7 +302,7 @@ class PutMapping {
         const chunk_config = _.find(bucket.system.chunk_configs_by_id,
             c => _.isEqual(c.chunk_coder_config, chunk.chunk_coder_config))._id;
         this.add_new_parts(chunk.parts, chunk, chunk_id);
-        this.new_chunks.push(_.omitBy({
+        const new_chunk = (_.omitBy({
             _id: chunk_id,
             system: bucket.system._id,
             bucket: bucket._id,
@@ -339,10 +336,12 @@ class PutMapping {
                 }, _.isUndefined);
             })
         }, _.isUndefined));
+        dbg.log0('JAJA adding chunk:', inspect(new_chunk));
+        this.new_chunks.push(new_chunk);
     }
 
     add_existing_chunk(chunk) {
-        const bucket = system_store.data.get_by_id(chunk.bucket);
+        const bucket = chunk.bucket;
         this.update_chunk_ids.push(MDStore.instance().make_md_id(chunk._id));
         for (const frag of chunk.frags) {
             for (const { block } of frag.allocations) {
@@ -513,6 +512,10 @@ function enough_room_in_tier(tier, bucket) {
         map_reporter.add_event(`not_enough_room(${tier.name})`, available_to_upload.toJSNumber(), 0);
         return false;
     }
+}
+
+function inspect(obj) {
+    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
 }
 
 exports.GetMapping = GetMapping;

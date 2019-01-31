@@ -119,7 +119,8 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
                     dbg.log0('Chunk with low tier will be sent for rebuilding', chunk);
                     chunks_to_scrub.push(chunk);
                 } else if (location_info) {
-                    const mapping = mapper.map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status, location_info);
+                    const chunk_info = mapper.get_chunk_info(chunk);
+                    const mapping = mapper.map_chunk(chunk_info, chunk.tier, bucket.tiering, tiering_status, location_info);
                     if (mapper.should_rebuild_chunk_to_local_mirror(mapping, location_info)) {
                         dbg.log2('Chunk with following mapping will be sent for rebuilding', chunk, mapping);
                         chunks_to_scrub.push(chunk);

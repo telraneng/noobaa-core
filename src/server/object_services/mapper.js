@@ -1,6 +1,8 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
+/// <reference path="../../api/nb.d.ts" />
+
 const _ = require('lodash');
 const util = require('util');
 
@@ -23,15 +25,14 @@ class ChunkMapper {
         this.chunk = chunk;
         this.is_write = !chunk._id;
         this.frags_by_index = _.keyBy(chunk.frags, _frag_index);
-        const frags_by_id = _.keyBy(chunk.frags, '_id');
-        this.blocks_by_index = _.groupBy(chunk.blocks, block => _frag_index(frags_by_id[block.frag]));
         this.accessible = this.is_accessible();
+        dbg.log0('JAJA chunks in ChunkMapper', util.inspect(chunk, { depth: null }));
     }
 
     is_accessible() {
 
         const {
-            blocks_by_index,
+            frags_by_index,
             chunk: {
                 chunk_coder_config: {
                     data_frags = 1,
@@ -44,10 +45,10 @@ class ChunkMapper {
 
         for (let data_index = 0; data_index < data_frags; ++data_index) {
             const frag_index = `D${data_index}`;
-            const blocks = blocks_by_index[frag_index];
-            if (blocks) {
-                for (let i = 0; i < blocks.length; ++i) {
-                    if (_is_block_accessible(blocks[i])) {
+            const frag = frags_by_index[frag_index];
+            if (frag.blocks) {
+                for (let i = 0; i < frag.blocks.length; ++i) {
+                    if (frag.blocks[i].accessible) {
                         num_accessible += 1;
                         break;
                     }
@@ -58,10 +59,10 @@ class ChunkMapper {
 
         for (let parity_index = 0; parity_index < parity_frags; ++parity_index) {
             const frag_index = `P${parity_index}`;
-            const blocks = blocks_by_index[frag_index];
-            if (blocks) {
-                for (let i = 0; i < blocks.length; ++i) {
-                    if (_is_block_accessible(blocks[i])) {
+            const frag = frags_by_index[frag_index];
+            if (frag.blocks) {
+                for (let i = 0; i < frag.blocks.length; ++i) {
+                    if (frag.blocks[i].accessible) {
                         num_accessible += 1;
                         break;
                     }
@@ -151,7 +152,6 @@ class MirrorMapper {
             },
             is_write,
             frags_by_index,
-            blocks_by_index,
         } = chunk_mapper;
 
         // TODO GUY GAP handle change of data_frags between tier vs. chunk
@@ -173,7 +173,6 @@ class MirrorMapper {
                 chunk_mapper,
                 tier_mapping,
                 frags_by_index[frag_index],
-                blocks_by_index[frag_index],
                 desired_replicas,
                 is_write);
         }
@@ -183,13 +182,12 @@ class MirrorMapper {
                 chunk_mapper,
                 tier_mapping,
                 frags_by_index[frag_index],
-                blocks_by_index[frag_index],
                 desired_replicas,
                 is_write);
         }
     }
 
-    _map_frag(chunk_mapper, tier_mapping, frag, blocks, replicas, is_write) {
+    _map_frag(chunk_mapper, tier_mapping, frag, replicas, is_write) {
         const {
             pools_by_id,
             regular_pools,
@@ -197,12 +195,13 @@ class MirrorMapper {
         } = this;
         const { blocks_in_use } = tier_mapping;
 
-        const accessible_blocks = _.filter(blocks, _is_block_accessible);
+        const accessible_blocks = _.filter(frag.blocks, 'accessible');
         const accessible = accessible_blocks.length > 0;
         const used_blocks = [];
 
         // rebuild from other frags
         if (!accessible && !is_write) {
+            dbg.log0('JAJA pushing to missing frag', util.inspect(frag), util.inspect(frag.blocks));
             tier_mapping.missing_frags = tier_mapping.missing_frags || [];
             tier_mapping.missing_frags.push(frag);
         }
@@ -214,8 +213,7 @@ class MirrorMapper {
             // block on pools that do not belong to the current mirror anymore
             // can be accessible but will eventually be deallocated
             const pool = pools_by_id[block.pool];
-            const is_good_node = _is_block_good_node(block);
-            if (is_good_node && pool) {
+            if (!block.misplaced && pool) {
                 block.is_local_mirror = this.is_local_mirror;
                 used_blocks.push(block);
                 // Also we calculate the weight of the current block allocations
@@ -574,6 +572,9 @@ function get_part_info(part, adminfo, tiering_status, location_info) {
     };
 }
 
+/**
+ * @returns {nb.ChunkInfo}
+ */
 function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
     const bucket = chunk.bucket;
     let mapping;
@@ -634,7 +635,7 @@ function get_frag_info(chunk, frag, blocks, mapping, adminfo, location_info) {
         parity_index: frag.parity_index,
         lrc_index: frag.lrc_index,
         digest_b64: frag.digest && frag.digest.toString('base64'),
-        blocks: blocks ? _.map(blocks, block => get_block_info(chunk, frag, block, adminfo)) : [],
+        blocks: blocks && _.map(blocks, block => get_block_info(chunk, frag, block, adminfo)),
         deletions: mapping.deletions ? _.map(mapping.deletions, block => ({
             block_id: get_block_md(chunk, frag, block).id
         })) : [],
@@ -681,6 +682,7 @@ function get_block_info(chunk, frag, block, adminfo) {
     return {
         block_md: get_block_md(chunk, frag, block),
         accessible: _is_block_accessible(block),
+        misplaced: _is_block_misplaced(block),
         adminfo: adminfo || undefined,
     };
 }
@@ -709,8 +711,8 @@ function _is_block_accessible(block) {
     return block.node.readable && !block.missing && !block.tempered;
 }
 
-function _is_block_good_node(block) {
-    return block.node.writable;
+function _is_block_misplaced(block) {
+    return !block.node.writable;
 }
 
 /**

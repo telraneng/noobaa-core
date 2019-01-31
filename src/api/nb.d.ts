@@ -1,5 +1,8 @@
 export as namespace nb;
 
+type Semaphore = import('../util/semaphore');
+type KeysSemaphore = import('../util/keys_semaphore');
+
 export interface ChunkInfo {
     _id: string;
     tier: string;
@@ -7,7 +10,7 @@ export interface ChunkInfo {
     frags: FragInfo[];
     missing_frags: boolean;
     dup_chunk: string;
-    parts: PartInfo[];
+    parts?: PartInfo[];
     chunk_coder_config: ChunkCoderConfig;
     size: number;
     compress_size: number;
@@ -19,6 +22,11 @@ export interface ChunkInfo {
 
     // used when sending chunk info to nb_native().chunk_coder()
     coder?: string;
+    had_errors?: boolean;
+
+    objects?: any[];
+
+    adminfo?: any;
 }
 
 interface ChunkCoderConfig {
@@ -26,6 +34,7 @@ interface ChunkCoderConfig {
 }
 
 interface FragInfo {
+    _id: string;
     data_index: number;
     parity_index: number;
     lrc_index: number;
@@ -33,6 +42,21 @@ interface FragInfo {
     allocations: any;
     deletions: any;
     future_deletions: any;
+    blocks?: BlockInfo[];
+
+    /**
+     * the block buffer attached on the frag on upload
+     */
+    block?: any;
+}
+
+interface BlockInfo {
+    block_md: BlockMD;
+    accessible: boolean;
+}
+
+interface BlockMD {
+
 }
 
 interface PartInfo {
@@ -45,8 +69,6 @@ interface PartInfo {
 }
 
 type Tier = any;
-
-type Semaphore = any;
 
 interface LocationInfo {
 

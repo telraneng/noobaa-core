@@ -355,9 +355,9 @@ class ObjectIO {
                 chunk.tier = params.tier;
                 chunk.bucket = params.bucket_id;
                 chunk.parts = [part];
-                dbg.log0('UPLOAD: part', part.desc, chunk);
+                dbg.log0('UPLOAD: part', part.desc, inspect(chunk));
             }
-            const m = new map_client.MapClient({
+            const mc = new map_client.MapClient({
                 chunks,
                 location_info: params.location_info,
                 check_dups: true,
@@ -372,7 +372,8 @@ class ObjectIO {
                 block_replicate_sem_agent: this._block_replicate_sem_agent,
                 block_read_sem_agent: this._block_read_sem_agent,
             });
-            await m.run();
+            await mc.run();
+            if (mc.had_errors) throw new Error('Upload map errors');
             return callback();
         } catch (err) {
             dbg.error('UPLOAD: _upload_chunks', err.stack || err);
@@ -940,6 +941,10 @@ function _get_io_semaphore_size(size) {
     // This is done as a temporary quick fix and is not a good one
     return _.isNumber(size) ? Math.min(config.IO_STREAM_SEMAPHORE_SIZE_CAP, size) :
         config.IO_STREAM_MINIMAL_SIZE_LOCK;
+}
+
+function inspect(obj) {
+    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
 }
 
 module.exports = ObjectIO;

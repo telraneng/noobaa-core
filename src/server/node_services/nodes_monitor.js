@@ -292,7 +292,6 @@ class NodesMonitor extends EventEmitter {
                 .timeout(AGENT_RESPONSE_TIMEOUT);
             if (info.storage) {
                 item.node.storage = info.storage;
-                dbg.log0('JAJA storage_info from', item.node.name, 'info:', info);
                 this._set_need_update.add(item);
                 this._update_status(item);
             }

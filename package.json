@@ -61,6 +61,8 @@
   "dependencies": {
     "@google-cloud/storage": "2.3.4",
     "@types/bluebird": "3.5.25",
+    "@types/lodash": "4.14.120",
+    "@types/node": "10.12.19",
     "ajv": "6.6.2",
     "aws-sdk": "2.382.0",
     "azure-storage": "2.10.2",
