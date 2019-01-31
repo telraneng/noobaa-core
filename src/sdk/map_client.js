@@ -99,6 +99,7 @@ class MapClient {
         this.block_write_sem_agent = block_write_sem_agent;
         this.block_replicate_sem_agent = block_replicate_sem_agent;
         this.block_read_sem_agent = block_read_sem_agent;
+        this.had_errors = false;
     }
 
     async run() {
@@ -124,7 +125,11 @@ class MapClient {
         /** @type {nb.ChunkInfo[]} */
         this.chunks_mapping = chunks;
         for (let i = 0; i < this.chunks.length; ++i) {
+            this.chunks[i][util.inspect.custom] = custom_inspect_chunk;
+            this.chunks_mapping[i][util.inspect.custom] = custom_inspect_chunk;
             set_blocks_to_maps(this.chunks[i], this.chunks_mapping[i]);
+            dbg.log0('JAJA chunk before get_mapping', this.chunks[i]);
+            dbg.log0('JAJA chunk after get_mapping', this.chunks_mapping[i]);
         }
     }
 
@@ -134,6 +139,7 @@ class MapClient {
      * - update_db
      */
     async put_mapping() {
+        // TODO should we filter out chunk.had_errors from put mapping?
         await this.rpc_client.object.put_mapping({
             chunks: this.chunks_mapping.map(pick_chunk_attrs),
             move_to_tier: this.move_to_tier,
@@ -142,7 +148,20 @@ class MapClient {
 
     async process_mapping() {
         const chunks = this.chunks_mapping;
-        this.chunks_mapping = await P.map(chunks, async chunk => this.process_chunk(chunk));
+        this.chunks_mapping = await P.map(chunks, async chunk => {
+            try {
+                const chunk_mapping = await this.process_chunk(chunk);
+                return chunk_mapping;
+            } catch (err) {
+                chunk.had_errors = true;
+                this.had_errors = true;
+                dbg.warn('MapClient.process_mapping: chunk ERROR',
+                    err.stack || err, 'chunk', chunk,
+                    err.chunks ? 'err.chunks ' + inspect(err.chunks) : '',
+                );
+                return chunk;
+            }
+        });
     }
 
     /**
@@ -150,8 +169,7 @@ class MapClient {
      * @returns {Promise<nb.ChunkInfo>}
      */
     async process_chunk(chunk) {
-        // chunk[util.inspect.custom] = custom_inspect_chunk;
-
+        dbg.log0('MapClient.process_chunk: allocations needed for chunk', chunk);
 
         if (chunk.dup_chunk) return chunk;
 
@@ -167,6 +185,7 @@ class MapClient {
                 await P.map(chunk.frags, call_process_frag);
                 done = true;
             } catch (err) {
+                if (chunk.had_errors) throw err;
                 if (Date.now() - start_time > config.IO_WRITE_PART_ATTEMPTS_EXHAUSTED) {
                     dbg.error('UPLOAD:', 'write part attempts exhausted', err);
                     throw err;
@@ -178,6 +197,8 @@ class MapClient {
                     move_to_tier: this.move_to_tier,
                     check_dups: this.check_dups,
                 });
+                chunk = res.chunks[0];
+                chunk[util.inspect.custom] = custom_inspect_chunk;
                 if (chunk.dup_chunk) return chunk;
             }
         }
@@ -190,23 +211,13 @@ class MapClient {
     async read_entire_chunk(chunk) {
         const part = { ...chunk.parts[0], desc: { chunk: chunk._id } };
 
-        dbg.log0('MapBuilder.read_entire_chunk: chunk before reading', chunk);
-        try {
-            await this.read_frags(part, chunk.frags);
-        } catch (err) {
-            dbg.warn('MapBuilder.read_entire_chunk: _read_frags ERROR',
-                err.stack || err,
-                util.inspect(err.chunks, true, null, true)
-            );
-            throw err;
-        }
+        dbg.log0('MapClient.read_entire_chunk: chunk before reading', chunk);
+        await this.read_frags(part, chunk.frags);
 
-        dbg.log0('MapBuilder.read_entire_chunk: chunk before encoding', chunk);
+        dbg.log0('MapClient.read_entire_chunk: chunk before encoding', chunk);
         chunk.coder = 'enc';
         await P.fromCallback(cb => nb_native().chunk_coder(chunk, cb));
-
-        dbg.log0('MapBuilder.read_entire_chunk: final chunk', chunk);
-        // set_blocks_to_maps(chunk, chunk_info);
+        dbg.log0('MapClient.read_entire_chunk: final chunk', chunk);
     }
 
     /**
@@ -215,12 +226,28 @@ class MapClient {
      */
     async process_frag(chunk, frag) {
         if (!frag.allocations) return;
+        const accessible_blocks = frag.blocks && frag.blocks.filter(block_info => block_info.accessible);
+        if (frag.block) { // upload case / fragment rebuild case (read_entire_chunk)
             const first_alloc = frag.allocations[0];
             const rest_allocs = frag.allocations.slice(1);
             await this.retry_write_block(first_alloc.block, frag.block);
             await P.map(rest_allocs, target_alloc => this.retry_replicate_blocks(first_alloc.block, target_alloc.block));
+        } else if (accessible_blocks && accessible_blocks.length) {
+            let next_source = Math.floor(Math.random() * accessible_blocks.length);
+            dbg.log0('JAJA replicate block', accessible_blocks, next_source);
+            await P.map(frag.allocations, async alloc => {
+                const source_block = accessible_blocks[next_source];
+                next_source = (next_source + 1) % accessible_blocks.length;
+                return this.retry_replicate_blocks(source_block, alloc.block);
+            });
         } else {
-            throw new Error('No data source to write new block');
+            // we already know that this chunk cannot be read here
+            // because we already handled missing_frags 
+            // and now we still have a frag without data source.
+            // so we mark the chunk.had_errors to break from the process_frag loop.
+            chunk.had_errors = true;
+            this.had_errors = true;
+            throw new Error(`No data source for frag ${frag._id}`);
         }
     }
 
@@ -249,6 +276,8 @@ class MapClient {
     /**
      * retry the replicate operations
      * once any retry exhaust we report and throw an error
+     * @param {nb.BlockInfo} source_block
+     * @param {nb.BlockInfo} target_block
      */
     async retry_replicate_blocks(source_block, target_block) {
         let done = false;
@@ -333,6 +362,20 @@ function set_blocks_to_maps(chunk, chunk_mapping) {
         frag.block = frag_with_data.block;
     }
 }
+
+function inspect(obj) {
+    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
+}
+
+/**
+ * avoid printing rpc_client to logs, it's ugly
+ * also avoid infinite recursion and omit inspect function
+ * @this {nb.ChunkInfo}
+ */
+function custom_inspect_chunk() {
+    return inspect(_.omit(this, 'rpc_client', 'parts', util.inspect.custom));
+}
+
 
 exports.MapClient = MapClient;
 exports.pick_chunk_attrs = pick_chunk_attrs;
