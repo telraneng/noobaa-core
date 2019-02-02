@@ -52,6 +52,8 @@ config.CLOUD_AGENTS_N2N_PORT = 60100;
 // TODO: Should check what PORT we are interested in taking
 config.MONGO_AGENTS_N2N_PORT = 60100;
 
+config.N2N_OFFER_INTERNAL = false;
+
 /////////////////////
 // ENDPOINT CONFIG //
 /////////////////////

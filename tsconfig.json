@@ -1,15 +1,28 @@
 {
     "include": [
-        "src/api/**/*",
-        "src/sdk/**/*",
-        "src/server/object_services/**/*"
+        "src/api/nb.d.ts",
+        "src/sdk/{map,object}*",
+        "src/server/object_services/map*"
+    ],
+    "exclude": [
     ],
     "compilerOptions": {
-        "target": "es2017",
-        "lib": ["es2017"],
+        "target": "es2018",
         "module": "commonjs",
-        "checkJs": true,
+
+        // Compile and check also javascript files
         "allowJs": true,
-        "noEmit": true
+        "checkJs": true,
+
+        // noEmit means we are not really saving the output
+        // we only run to do compile time checks
+        "noEmit": true,
+
+        // noResolve does not follow require/import 
+        // so only included files will be compiled/checked
+        "noResolve": true,
+
+        // Allows to require json files
+        "resolveJsonModule": true,
     }
 }

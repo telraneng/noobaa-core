@@ -7,7 +7,7 @@
   performing the actuall logic and calls to winston.
 */
 /* eslint-disable global-require */
-"use strict";
+'use strict';
 
 /*
  *
@@ -422,7 +422,6 @@ class InternalDebugLogger {
         if (this._file_path) {
             var winston_log = this._logs_by_file[this._file_path.name];
             if (!winston_log) {
-                let winston = require('winston'); // eslint-disable-line no-shadow
                 //Define Transports
                 winston_log = winston.createLogger({
                     levels: this._levels,
@@ -487,12 +486,6 @@ function DebugLogger(mod) {
         int_dbg.set_level(this._name, config.dbg_log_level);
     }
 }
-
-/*
- * Populate the logX and logX_withbt functions automatically
- */
-var log_func_name = "log";
-var i;
 
 function log_builder(idx, options) {
 
