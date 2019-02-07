@@ -9,6 +9,7 @@
     "compilerOptions": {
         "target": "es2018",
         "module": "commonjs",
+        "moduleResolution": "node",
 
         // Compile and check also javascript files
         "allowJs": true,
@@ -20,9 +21,10 @@
 
         // noResolve does not follow require/import 
         // so only included files will be compiled/checked
-        "noResolve": true,
+        // we use this but only from our npm scripts so vscode will resolve other files
+        // "noResolve": true,
 
         // Allows to require json files
-        "resolveJsonModule": true,
+        "resolveJsonModule": true
     }
 }

@@ -1621,6 +1621,8 @@ class MDStore {
     }
 }
 
+MDStore._instance = undefined;
+
 function compact(obj) {
     return _.omitBy(obj, _.isUndefined);
 }

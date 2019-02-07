@@ -2,6 +2,7 @@ export as namespace nb;
 
 type Semaphore = import('../util/semaphore');
 type KeysSemaphore = import('../util/keys_semaphore');
+type Tier = any;
 
 export interface ChunkInfo {
     _id: string;
@@ -20,17 +21,25 @@ export interface ChunkInfo {
     cipher_iv_b64: string;
     cipher_auth_tag_b64: string;
 
-    // used when sending chunk info to nb_native().chunk_coder()
+    // coder is used when sending chunk info to nb_native().chunk_coder()
     coder?: string;
     had_errors?: boolean;
-
     objects?: any[];
-
     adminfo?: any;
 }
 
 interface ChunkCoderConfig {
     replicas: number;
+    digest_type: 'sha1' | 'sha256' | 'sha384' | 'sha512';
+    frag_digest_type: 'sha1' | 'sha256' | 'sha384' | 'sha512';
+    compress_type: 'snappy' | 'zlib';
+    cipher_type: 'aes-256-gcm';
+    data_frags: number;
+    parity_frags: number;
+    parity_type: 'isa-c1' | 'isa-rs' | 'cm256';
+    lrc_group: number;
+    lrc_frags: number;
+    lrc_type: 'isa-c1' | 'isa-rs' | 'cm256';
 }
 
 interface FragInfo {
@@ -68,8 +77,9 @@ interface PartInfo {
     obj_id: string;
 }
 
-type Tier = any;
-
 interface LocationInfo {
-
+    node_id?: string;
+    host_id?: string;
+    pool_id?: string;
+    region?: string;
 }

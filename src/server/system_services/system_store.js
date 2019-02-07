@@ -26,6 +26,7 @@ const size_utils = require('../../util/size_utils');
 const os_utils = require('../../util/os_utils');
 const mongo_utils = require('../../util/mongo_utils');
 const mongo_client = require('../../util/mongo_client');
+const { RpcError } = require('../../rpc');
 
 const COLLECTIONS = [{
     name: 'clusters',
@@ -216,6 +217,22 @@ class SystemStoreData {
 
     constructor(data) {
         this.time = Date.now();
+
+        // define the properties of collections and mem_indexes for type checks
+        this.clusters = undefined;
+        this.cluster_by_server = undefined;
+        this.namespace_resources = undefined;
+        this.systems = undefined;
+        this.systems_by_name = undefined;
+        this.roles = undefined;
+        this.accounts = undefined;
+        this.accounts_by_email = undefined;
+        this.buckets = undefined;
+        this.tieringpolicies = undefined;
+        this.tiers = undefined;
+        this.pools = undefined;
+        this.agent_configs = undefined;
+        this.chunk_configs = undefined;
     }
 
     /**
@@ -351,9 +368,7 @@ class SystemStoreData {
             if (!index.val_array) {
                 let existing = map && map[key];
                 if (existing && String(existing._id) !== String(item._id)) {
-                    let err = new Error(index.name + ' collision on key ' + key);
-                    err.rpc_code = 'CONFLICT';
-                    throw err;
+                    throw new RpcError('CONFLICT', index.name + ' collision on key ' + key);
                 }
             }
         });
@@ -410,59 +425,55 @@ class SystemStore extends EventEmitter {
             .catch(_.noop);
     }
 
-    refresh() {
-        return P.fcall(() => {
-            let load_time = 0;
-            if (this.data) {
-                load_time = this.data.time;
-            }
-            let since_load = Date.now() - load_time;
-            if (since_load < this.START_REFRESH_THRESHOLD) {
-                return this.data;
-            } else if (since_load < this.FORCE_REFRESH_THRESHOLD) {
-                this.load().catch(_.noop);
-                return this.data;
-            } else {
-                return this.load();
-            }
-        });
+    async refresh() {
+        let load_time = 0;
+        if (this.data) {
+            load_time = this.data.time;
+        }
+        let since_load = Date.now() - load_time;
+        if (since_load < this.START_REFRESH_THRESHOLD) {
+            return this.data;
+        } else if (since_load < this.FORCE_REFRESH_THRESHOLD) {
+            this.load().catch(_.noop);
+            return this.data;
+        } else {
+            return this.load();
+        }
     }
 
-    load() {
+    async load() {
         // serializing load requests since we have to run a fresh load after the previous one will finish
         // because it might not see the latest changes if we don't reload right after make_changes.
-        return this._load_serial.surround(() => {
-            dbg.log3('SystemStore: loading ...');
-            let new_data = new SystemStoreData();
-            let millistamp = time_utils.millistamp();
-            return P.resolve()
-                .then(() => this._register_for_changes())
-                .then(() => this._read_data_from_db(new_data))
-                .then(() => os_utils.read_server_secret())
-                .then(secret => {
-                    this._server_secret = secret;
-                    dbg.log1('SystemStore: fetch took', time_utils.millitook(millistamp));
-                    dbg.log1('SystemStore: fetch size', size_utils.human_size(JSON.stringify(new_data).length));
-                    dbg.log1('SystemStore: fetch data', util.inspect(new_data, {
-                        depth: 4
-                    }));
-                    millistamp = time_utils.millistamp();
-                    new_data.rebuild();
-                    dbg.log1('SystemStore: rebuild took', time_utils.millitook(millistamp));
-                    this.data = new_data;
-                    this.emit('load');
-                    this.is_finished_initial_load = true;
-                    return this.data;
-                })
-                .catch(err => {
-                    dbg.error('SystemStore: load failed', err.stack || err);
-                    throw err;
-                });
+        return this._load_serial.surround(async () => {
+            try {
+                dbg.log3('SystemStore: loading ...');
+                let new_data = new SystemStoreData();
+                let millistamp = time_utils.millistamp();
+                await this._register_for_changes();
+                await this._read_data_from_db(new_data);
+                const secret = await os_utils.read_server_secret();
+                this._server_secret = secret;
+                dbg.log1('SystemStore: fetch took', time_utils.millitook(millistamp));
+                dbg.log1('SystemStore: fetch size', size_utils.human_size(JSON.stringify(new_data).length));
+                dbg.log1('SystemStore: fetch data', util.inspect(new_data, {
+                    depth: 4
+                }));
+                millistamp = time_utils.millistamp();
+                new_data.rebuild();
+                dbg.log1('SystemStore: rebuild took', time_utils.millitook(millistamp));
+                this.data = new_data;
+                this.emit('load');
+                this.is_finished_initial_load = true;
+                return this.data;
+            } catch (err) {
+                dbg.error('SystemStore: load failed', err.stack || err);
+                throw err;
+            }
         });
     }
 
 
-    _register_for_changes() {
+    async _register_for_changes() {
         if (this.is_standalone) {
             dbg.log0('system_store is running in standalone mode. skip _register_for_changes');
             return;
@@ -750,6 +761,7 @@ class SystemStore extends EventEmitter {
     }
 }
 
+SystemStore._instance = undefined;
 
 // EXPORTS
 exports.SystemStore = SystemStore;
