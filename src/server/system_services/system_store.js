@@ -585,7 +585,12 @@ class SystemStore extends EventEmitter {
      *      systems: [123, 789],
      *   }
      * })
-     *
+     * 
+     * @param {Object} changes
+     * @property {Object} [insert]
+     * @property {Object} [update]
+     * @property {Object} [remove]
+     * 
      */
     make_changes(changes) {
         const bulk_per_collection = {};
@@ -757,7 +762,7 @@ class SystemStore extends EventEmitter {
 
     count_total_docs(name) {
         const collection = mongo_client.instance().collection(name);
-        return collection.count({});
+        return collection.countDocuments({}); // maybe estimatedDocumentCount()
     }
 }
 

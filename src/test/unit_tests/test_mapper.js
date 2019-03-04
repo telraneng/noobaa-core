@@ -186,7 +186,7 @@ coretest.describe_mapper_test_case({
 
     mocha.describe('deletions', function() {
 
-        mocha.it.only('should do nothing when chunk is good', function() {
+        mocha.it('should do nothing when chunk is good', function() {
             const chunk = make_chunk({
                 _id: 1,
                 frags,

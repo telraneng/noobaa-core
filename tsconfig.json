@@ -1,8 +1,11 @@
 {
     "include": [
-        "src/api/nb.d.ts",
-        "src/sdk/{map,object}*",
-        "src/server/object_services/map*"
+        // "src/sdk/map_types.js",
+        // "src/sdk/map_client.js",
+        // "src/sdk/object*",
+        "src/sdk/map*",
+        "src/server/object_services/map*",
+        "src/sdk/nb.d.ts"
     ],
     "exclude": [
     ],

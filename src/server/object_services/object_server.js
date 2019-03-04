@@ -234,19 +234,9 @@ async function abort_object_upload(req) {
  */
 async function get_mapping(req) {
     throw_if_maintenance(req);
-    try {
-        const get_map = new map_server.GetMapping({
-            chunks: req.rpc_params.chunks,
-            location_info: req.rpc_params.location_info,
-            move_to_tier: req.rpc_params.move_to_tier,
-            check_dups: req.rpc_params.check_dups,
-        });
-        const chunks = await get_map.run();
-        return { chunks };
-    } catch (err) {
-        dbg.error('object_server.get_mapping: ERROR', err.stack || err);
-        throw err;
-    }
+    const get_map = new map_server.GetMapping(req.rpc_params);
+    const chunks = await get_map.run();
+    return { chunks: chunks.map(chunk => chunk.to_chunk_api()) };
 }
 
 
@@ -257,18 +247,9 @@ async function get_mapping(req) {
  */
 async function put_mapping(req) {
     throw_if_maintenance(req);
-    try {
-        // const obj = await find_cached_object_upload(req);
-        const put_map = new map_server.PutMapping({
-            chunks: req.rpc_params.chunks,
-            location_info: req.rpc_params.location_info,
-            move_to_tier: req.rpc_params.move_to_tier,
-        });
-        await put_map.run();
-    } catch (err) {
-        dbg.error('object_server.put_mapping: ERROR', err.stack || err);
-        throw err;
-    }
+    // const obj = await find_cached_object_upload(req);
+    const put_map = new map_server.PutMapping(req.rpc_params);
+    await put_map.run();
 }
 
 

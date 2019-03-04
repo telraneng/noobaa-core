@@ -11,16 +11,16 @@ const mapper = require('./mapper');
 const MDStore = require('./md_store').MDStore;
 const js_utils = require('../../util/js_utils');
 const KeysLock = require('../../util/keys_lock');
+const Semaphore = require('../../util/semaphore');
 const server_rpc = require('../server_rpc');
 const map_client = require('../../sdk/map_client');
+const map_server = require('./map_server');
 const map_deleter = require('./map_deleter');
 const mongo_utils = require('../../util/mongo_utils');
 const auth_server = require('../common_services/auth_server');
 const system_store = require('../system_services/system_store').get_instance();
-const node_allocator = require('../node_services/node_allocator');
-const system_utils = require('../utils/system_utils');
-const Semaphore = require('../../util/semaphore');
 const KeysSemaphore = require('../../util/keys_semaphore');
+const node_allocator = require('../node_services/node_allocator');
 
 
 const builder_lock = new KeysLock();
@@ -39,6 +39,7 @@ const builder_lock = new KeysLock();
 class MapBuilder {
 
     constructor() {
+        /** @type {nb.Chunk[]} */
         this.chunks = [];
         // global semaphores shared by all agents
         this._block_write_sem_global = new Semaphore(config.IO_WRITE_CONCURRENCY_GLOBAL);
@@ -86,13 +87,9 @@ class MapBuilder {
         this.delete_blocks = [];
         // this.new_blocks = [];
 
-        await this.reload_chunks(chunk_ids);
         await system_store.refresh();
-        const [parts_objects_res, ] = await P.all([
-            MDStore.instance().load_parts_objects_for_chunks(this.chunks),
-            MDStore.instance().load_blocks_for_chunks(this.chunks)
-        ]);
-        await this.prepare_and_fix_chunks(parts_objects_res);
+        await this.reload_chunks(chunk_ids);
+        await this.prepare_and_fix_chunks();
         await this.build_chunks();
         await this.update_db();
     }
@@ -103,13 +100,18 @@ class MapBuilder {
     // This will allow other batches to run if they wait on non existing chunks
     async reload_chunks(chunk_ids) {
         /** @type {Array} */
-        this.chunks = await MDStore.instance().find_chunks_by_ids(chunk_ids);
+        const chunks = await MDStore.instance().find_chunks_by_ids(chunk_ids);
+        await Promise.all([
+            MDStore.instance().load_parts_objects_for_chunks(chunks),
+            MDStore.instance().load_blocks_for_chunks(chunks)
+        ]);
+        this.chunks = chunks.map(chunk => mapper.get_chunk_info(chunk));
         dbg.log1('MapBuilder.reload_chunks:', this.chunks);
     }
 
-    async prepare_and_fix_chunks({ parts, objects }) {
+    async prepare_and_fix_chunks() {
         // first look for deleted chunks, and set it's blocks for deletion
-        const [deleted_chunks, live_chunks] = _.partition(this.chunks, chunk => chunk.deleted);
+        const [deleted_chunks, live_chunks] = _.partition(this.chunks, chunk => Boolean(chunk.deleted));
         // set this.chunks to only hold live chunks
         this.chunks = live_chunks;
 
@@ -123,13 +125,9 @@ class MapBuilder {
             }
         });
 
-        const parts_by_chunk = _.groupBy(parts, 'chunk');
-        const objects_by_id = _.keyBy(objects, '_id');
         await P.map(this.chunks, async chunk => {
             // if other actions should be done to prepare a chunk for build, those actions should be added here
-            chunk.parts = parts_by_chunk[chunk._id];
-            chunk.objects = _.uniq(_.compact(_.map(chunk.parts, part => objects_by_id[part.obj])));
-            system_utils.prepare_chunk_for_mapping(chunk);
+            map_server.populate_chunk(chunk);
 
             try {
                 if (!chunk.parts || !chunk.parts.length) throw new Error('No valid parts are pointing to chunk' + chunk._id);
@@ -170,7 +168,7 @@ class MapBuilder {
             if (deleted_bucket) {
                 dbg.warn(`Chunk ${chunk._id} is held by a deleted bucket ${deleted_bucket.name} marking for deletion`);
                 chunk.bucket = deleted_bucket.record;
-                this.objects_to_delete.push(_.filter(chunk.objects, obj => _.isEqual(obj.bucket, deleted_bucket.record._id)));
+                this.objects_to_delete.push(...chunk.objects.filter(obj => _.isEqual(obj.bucket, deleted_bucket.record._id)));
                 return;
             }
             //We prefer to leave the option for manual fix if we'll need it
@@ -194,14 +192,8 @@ class MapBuilder {
 
     async build_chunks() {
         try {
-            const chunks_info = this.chunks.map(chunk => {
-                const chunk_info = mapper.get_chunk_info(chunk);
-                dbg.warn('JAJA MapBuilder chunk', util.inspect(chunk, { breakLength: 100000 }));
-                dbg.warn('JAJA MapBuilder chunk_info', util.inspect(chunk_info, { breakLength: 100000 }));
-                return chunk_info;
-            });
             const mc = new map_client.MapClient({
-                chunks: chunks_info,
+                chunks: this.chunks,
                 move_to_tier: this.move_to_tier && this.move_to_tier._id,
                 rpc_client: server_rpc.rpc.new_client({
                     auth_token: auth_server.make_auth_token({
@@ -210,8 +202,8 @@ class MapBuilder {
                     })
                 }),
                 desc: 'MapBuilder',
-                read_frags: () => 1,
-                report_error: () => 1,
+                read_frags: () => 1, // TODO MapClient.read_frags
+                report_error: () => 1, // TODO MApClient.report_error
                 block_write_sem_global: this._block_write_sem_global,
                 block_replicate_sem_global: this._block_replicate_sem_global,
                 block_read_sem_global: this._block_read_sem_global,
@@ -246,11 +238,11 @@ class MapBuilder {
 
     update_db() {
         const success_chunk_ids = mongo_utils.uniq_ids(
-            _.reject(this.chunks, chunk => chunk.had_errors || chunk.bucket.deleted), '_id');
+            _.filter(this.chunks, chunk => !chunk.had_errors && !chunk.bucket.deleted), '_id');
         const failed_chunk_ids = mongo_utils.uniq_ids(
             _.filter(this.chunks, chunk => chunk.had_errors && !chunk.bucket.deleted), '_id');
-        const objs_to_be_deleted = _.uniqBy(_.flatten(this.objects_to_delete), '_id');
-        const chunks_to_be_deleted = _.uniqBy(_.flatten(this.chunks_to_delete), '_id');
+        const objs_to_be_deleted = _.uniqBy(this.objects_to_delete, '_id');
+        const chunks_to_be_deleted = _.uniqBy(this.chunks_to_delete, '_id');
 
         dbg.log1('MapBuilder.update_db:',
             'chunks', this.chunks.length,

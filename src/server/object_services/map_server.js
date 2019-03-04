@@ -12,17 +12,16 @@ const mapper = require('./mapper');
 const MDStore = require('./md_store').MDStore;
 const time_utils = require('../../util/time_utils');
 const size_utils = require('../../util/size_utils');
-const map_client = require('../../sdk/map_client');
 const server_rpc = require('../server_rpc');
 const auth_server = require('../common_services/auth_server');
 const mongo_utils = require('../../util/mongo_utils');
 const map_deleter = require('./map_deleter');
-const system_utils = require('../utils/system_utils');
 const system_store = require('../system_services/system_store').get_instance();
 const node_allocator = require('../node_services/node_allocator');
 const PeriodicReporter = require('../../util/periodic_reporter');
 const Barrier = require('../../util/barrier');
 const KeysSemaphore = require('../../util/keys_semaphore');
+const { Chunk } = require('../../sdk/map_client');
 
 const map_reporter = new PeriodicReporter('map_reporter');
 const make_room_semaphore = new KeysSemaphore(1);
@@ -43,26 +42,29 @@ const ensure_room_barrier = new Barrier({
  */
 class GetMapping {
 
-    constructor({
-        chunks,
-        location_info,
-        move_to_tier,
-        check_dups,
-    }) {
-        this.chunks = chunks;
-        this.location_info = location_info;
-        this.move_to_tier = move_to_tier && system_store.data.get_by_id(move_to_tier);
-        this.check_dups = check_dups;
-
-        for (const chunk of chunks) {
-            system_utils.prepare_chunk_for_mapping(chunk);
-        }
-        this.chunks_per_bucket = _.groupBy(chunks, chunk => chunk.bucket._id);
+    /**
+     * @param {Object} props
+     * @param {Object[]} props.chunks
+     * @param {nb.ID} [props.move_to_tier]
+     * @param {boolean} [props.check_dups]
+     * @param {nb.LocationInfo} [props.location_info]
+     */
+    constructor(props) {
+        this.chunks = props.chunks.map(Chunk.from_chunk_api);
+        /** @type {nb.Tier} */
+        this.move_to_tier = props.move_to_tier && system_store.data.get_by_id(props.move_to_tier);
+        this.check_dups = Boolean(props.check_dups);
+        this.location_info = props.location_info;
+        this.chunks_per_bucket = _.groupBy(this.chunks, chunk => String(chunk.bucket._id));
 
         // assert move_to_tier is only used for chunks on the same bucket
         if (this.move_to_tier) assert.strictEqual(Object.keys(this.chunks_per_bucket).length, 1);
+        Object.seal(this);
     }
 
+    /**
+     * @returns {Promise<Chunk[]>}
+     */
     async run() {
         const millistamp = time_utils.millistamp();
         dbg.log1('GetMapping: start');
@@ -71,12 +73,7 @@ class GetMapping {
             await this.do_allocations();
             dbg.log0('GetMapping: DONE. chunks', this.chunks.length,
                 'took', time_utils.millitook(millistamp));
-            return this.chunks.map(chunk => {
-                const c = map_client.pick_chunk_attrs(chunk);
-                c.bucket = chunk.bucket._id;
-                c.tier = chunk.tier._id;
-                return c;
-            });
+            return this.chunks;
         } catch (err) {
             dbg.error('GetMapping: ERROR', err.stack || err);
             throw err;
@@ -86,16 +83,17 @@ class GetMapping {
     async find_dups() {
         if (!this.check_dups) return;
         if (!config.DEDUP_ENABLED) return;
-        await P.map(Object.values(this.chunks_per_bucket), async chunks => {
+        await Promise.all(Object.values(this.chunks_per_bucket).map(async chunks => {
             const bucket = chunks[0].bucket;
             const dedup_keys = _.compact(_.map(chunks,
                 chunk => chunk.digest_b64 && Buffer.from(chunk.digest_b64, 'base64')));
             dbg.log0('GetMapping.find_dups', dedup_keys.length);
             if (!dedup_keys.length) return;
-            const dup_chunks = await MDStore.instance().find_chunks_by_dedup_key(bucket, dedup_keys);
+            const dup_chunks_db = await MDStore.instance().find_chunks_by_dedup_key(bucket, dedup_keys);
+            const dup_chunks = dup_chunks_db.map(Chunk.from_chunk_db);
             dbg.log0('GetMapping.dup_chunks', dup_chunks);
             for (const dup_chunk of dup_chunks) {
-                system_utils.prepare_chunk_for_mapping(dup_chunk);
+                populate_chunk(dup_chunk);
             }
             await this.prepare_chunks_group(dup_chunks);
             for (const dup_chunk of dup_chunks) {
@@ -108,11 +106,11 @@ class GetMapping {
                     }
                 }
             }
-        });
+        }));
     }
 
     async do_allocations() {
-        await P.map(Object.values(this.chunks_per_bucket), async chunks => {
+        await Promise.all(Object.values(this.chunks_per_bucket).map(async chunks => {
             const bucket = chunks[0].bucket;
             const total_size = _.sumBy(chunks, 'size');
             await this.prepare_chunks_group(chunks, this.move_to_tier);
@@ -128,7 +126,7 @@ class GetMapping {
                     // await this.prepare_chunks_group(chunks, bucket);
                 }
             }
-        });
+        }));
     }
 
     async prepare_chunks_group(chunks, move_to_tier) {
@@ -151,7 +149,7 @@ class GetMapping {
             if (chunk.mapping.missing_frags) {
                 chunk.missing_frags = true;
             }
-            dbg.log0('JAJA GetMapping:', inspect(_.omit(chunk.mapping, 'tier')));
+            dbg.log0('JAJA GetMapping:', util.inspect(_.omit(chunk.mapping, 'tier')));
         }
     }
 
@@ -183,7 +181,7 @@ class GetMapping {
                     `avoid_nodes ${avoid_nodes.join(',')} ` +
                     `pools ${pools.join(',')} ` +
                     // `tier_for_write ${this.tier_for_write.name} ` +
-                    `tiering_status ${util.inspect(this.tiering_status, { depth: null })} `);
+                    `tiering_status ${util.inspect(this.tiering_status)} `);
                 // chunk.frags = saved_frags;
                 return false;
             }
@@ -225,7 +223,7 @@ class GetMapping {
                         `avoid_nodes ${avoid_nodes.join(',')} ` +
                         `pools ${alloc.pools.join(',')} ` +
                         `tier_for_write ${this.tier_for_write.name} ` +
-                        `tiering_status ${util.inspect(this.tiering_status, { depth: null })} `);
+                        `tiering_status ${util.inspect(this.tiering_status)} `);
                     ok = false;
                 }
             });
@@ -255,15 +253,22 @@ class GetMapping {
  */
 class PutMapping {
 
-    constructor({ chunks, move_to_tier }) {
-        this.chunks = chunks;
-        this.move_to_tier = move_to_tier && system_store.data.get_by_id(move_to_tier);
+    /**
+     * @param {Object} props
+     * @param {Object[]} props.chunks
+     * @param {nb.ID} props.move_to_tier
+     */
+    constructor(props) {
+        this.chunks = props.chunks.map(Chunk.from_chunk_api);
+        /** @type {nb.Tier} */
+        this.move_to_tier = props.move_to_tier && system_store.data.get_by_id(props.move_to_tier);
 
         this.new_blocks = [];
         this.new_chunks = [];
         this.new_parts = [];
         this.delete_blocks = [];
         this.update_chunk_ids = [];
+        Object.seal(this);
     }
 
     async run() {
@@ -283,7 +288,7 @@ class PutMapping {
 
     add_chunks() {
         for (const chunk of this.chunks) {
-            system_utils.prepare_chunk_for_mapping(chunk);
+            populate_chunk(chunk);
             if (chunk.dup_chunk) { // duplicated chunk
                 this.add_new_parts(chunk.parts, chunk, chunk.dup_chunk);
             } else if (chunk._id) {
@@ -336,7 +341,7 @@ class PutMapping {
                 }, _.isUndefined);
             })
         }, _.isUndefined));
-        dbg.log0('JAJA adding chunk:', inspect(new_chunk));
+        dbg.log0('JAJA adding chunk:', new_chunk);
         this.new_chunks.push(new_chunk);
     }
 
@@ -467,7 +472,10 @@ async function make_room_in_tier(tier_id, bucket_id) {
         await node_allocator.refresh_tiering_alloc(tiering, 'force');
     });
 }
-
+/**
+ * 
+ * @param {Array<{ tier: nb.Tier, bucket: nb.Bucket }>} tiers_and_buckets 
+ */
 async function ensure_room_barrier_process(tiers_and_buckets) {
     const uniq_tiers_and_buckets = _.uniqBy(tiers_and_buckets, 'tier');
     await P.map(uniq_tiers_and_buckets, async ({ tier, bucket }) => {
@@ -514,11 +522,9 @@ function enough_room_in_tier(tier, bucket) {
     }
 }
 
-function inspect(obj) {
-    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
-}
 
 exports.GetMapping = GetMapping;
 exports.PutMapping = PutMapping;
 exports.select_tier_for_write = select_tier_for_write;
 exports.make_room_in_tier = make_room_in_tier;
+exports.populate_chunk = populate_chunk;

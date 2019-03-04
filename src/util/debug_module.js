@@ -36,6 +36,12 @@ try {
     // ignore
 }
 
+// override the default inspect options
+util.inspect.defaultOptions.depth = 10;
+util.inspect.defaultOptions.colors = true;
+util.inspect.defaultOptions.breakLength = Infinity;
+
+
 //Detect our context, node/atom/browser
 //Different context requires different handling, for example winston usage or console wrapping
 var processType; // eslint-disable-line no-unused-vars

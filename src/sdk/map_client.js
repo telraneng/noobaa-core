@@ -1,9 +1,9 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../api/nb.d.ts" />
+/// <reference path="./nb.d.ts" />
 
-const _ = require('lodash');
+// const _ = require('lodash');
 const util = require('util');
 
 const P = require('../util/promise');
@@ -11,99 +11,54 @@ const dbg = require('../util/debug_module')(__filename);
 const config = require('../../config');
 const nb_native = require('../util/nb_native');
 const block_store_client = require('../agent/block_store_services/block_store_client').instance();
+const { Chunk, Frag, Block } = require('./map_types');
+Object.freeze({ Chunk, Frag, Block });
+
+// const system_store = require('../server/system_services/system_store').get_instance();
+// const { make_md_id } = require('../server/object_services/md_store');
 const { RpcError, RPC_BUFFERS } = require('../rpc');
-
 // dbg.set_level(5, 'core');
-
-const PART_ATTRS = [
-    'start',
-    'end',
-    'seq',
-    'multipart_id',
-    'obj_id',
-];
-const CHUNK_ATTRS = [
-    '_id',
-    'tier',
-    'bucket',
-    'frags',
-    'missing_frags',
-    'dup_chunk',
-    'parts',
-    'chunk_coder_config',
-    'size',
-    'compress_size',
-    'frag_size',
-    'digest_b64',
-    'cipher_key_b64',
-    'cipher_iv_b64',
-    'cipher_auth_tag_b64',
-];
-const FRAG_ATTRS = [
-    'data_index',
-    'parity_index',
-    'lrc_index',
-    'digest_b64',
-    'allocations',
-    'deletions',
-    'future_deletions',
-    'blocks',
-];
 
 class MapClient {
 
     /**
-     * @param {Object} args
-     * @param {nb.ChunkInfo[]} args.chunks
-     * @param {nb.LocationInfo} [args.location_info]
-     * @param {nb.Tier} [args.move_to_tier]
-     * @param {boolean} [args.check_dups]
-     * @param {Object} args.rpc_client
-     * @param {string} [args.desc]
-     * @param {function} args.read_frags
-     * @param {function} args.report_error
-     * @param {nb.Semaphore} args.block_write_sem_global
-     * @param {nb.Semaphore} args.block_replicate_sem_global
-     * @param {nb.Semaphore} args.block_read_sem_global
-     * @param {nb.KeysSemaphore} args.block_write_sem_agent
-     * @param {nb.KeysSemaphore} args.block_replicate_sem_agent
-     * @param {nb.KeysSemaphore} args.block_read_sem_agent
+     * @param {Object} props
+     * @param {Chunk[]} props.chunks
+     * @param {nb.LocationInfo} [props.location_info]
+     * @param {nb.Tier} [props.move_to_tier]
+     * @param {boolean} [props.check_dups]
+     * @param {Object} props.rpc_client
+     * @param {string} [props.desc]
+     * @param {function} props.read_frags
+     * @param {function} props.report_error
+     * @param {nb.Semaphore} props.block_write_sem_global
+     * @param {nb.Semaphore} props.block_replicate_sem_global
+     * @param {nb.Semaphore} props.block_read_sem_global
+     * @param {nb.KeysSemaphore} props.block_write_sem_agent
+     * @param {nb.KeysSemaphore} props.block_replicate_sem_agent
+     * @param {nb.KeysSemaphore} props.block_read_sem_agent
      */
-    constructor({
-        chunks,
-        location_info,
-        move_to_tier,
-        check_dups,
-        rpc_client,
-        desc,
-        read_frags,
-        report_error,
-        block_write_sem_global,
-        block_replicate_sem_global,
-        block_read_sem_global,
-        block_write_sem_agent,
-        block_replicate_sem_agent,
-        block_read_sem_agent,
-    }) {
-        this.chunks = chunks;
-        this.location_info = location_info;
-        this.move_to_tier = move_to_tier;
-        this.check_dups = Boolean(check_dups);
-        this.rpc_client = rpc_client;
-        this.desc = desc;
-        this.read_frags = read_frags;
-        this.report_error = report_error;
-        this.block_write_sem_global = block_write_sem_global;
-        this.block_replicate_sem_global = block_replicate_sem_global;
-        this.block_read_sem_global = block_read_sem_global;
-        this.block_write_sem_agent = block_write_sem_agent;
-        this.block_replicate_sem_agent = block_replicate_sem_agent;
-        this.block_read_sem_agent = block_read_sem_agent;
+    constructor(props) {
+        this.chunks = props.chunks;
+        this.location_info = props.location_info;
+        this.move_to_tier = props.move_to_tier;
+        this.check_dups = Boolean(props.check_dups);
+        this.rpc_client = props.rpc_client;
+        this.desc = props.desc;
+        this.read_frags = props.read_frags;
+        this.report_error = props.report_error;
+        this.block_write_sem_global = props.block_write_sem_global;
+        this.block_replicate_sem_global = props.block_replicate_sem_global;
+        this.block_read_sem_global = props.block_read_sem_global;
+        this.block_write_sem_agent = props.block_write_sem_agent;
+        this.block_replicate_sem_agent = props.block_replicate_sem_agent;
+        this.block_read_sem_agent = props.block_read_sem_agent;
         this.had_errors = false;
+        Object.seal(this);
     }
 
     async run() {
-        await this.get_mapping();
+        this.chunks = await this.get_mapping();
         await this.process_mapping();
         await this.put_mapping();
     }
@@ -112,25 +67,27 @@ class MapClient {
      * object_server.put_mapping will handle:
      * - allocations
      * - make_room_in_tier
+     * @param {Chunk[]} chunks
+     * @returns {Promise<Chunk[]>}
      */
-    async get_mapping() {
+    async get_mapping(chunks = this.chunks) {
 
-        const { chunks } = await this.rpc_client.object.get_mapping({
-            chunks: this.chunks.map(pick_chunk_attrs),
+        /** @type {{ chunks: Object[] }} */
+        const res = await this.rpc_client.object.get_mapping({
+            chunks: chunks.map(Chunk.to_chunk_api),
             location_info: this.location_info,
-            move_to_tier: this.move_to_tier,
+            move_to_tier: this.move_to_tier._id,
             check_dups: this.check_dups,
         });
-
-        /** @type {nb.ChunkInfo[]} */
-        this.chunks_mapping = chunks;
-        for (let i = 0; i < this.chunks.length; ++i) {
-            this.chunks[i][util.inspect.custom] = custom_inspect_chunk;
-            this.chunks_mapping[i][util.inspect.custom] = custom_inspect_chunk;
-            set_blocks_to_maps(this.chunks[i], this.chunks_mapping[i]);
-            dbg.log0('JAJA chunk before get_mapping', this.chunks[i]);
-            dbg.log0('JAJA chunk after get_mapping', this.chunks_mapping[i]);
-        }
+        const res_chunks = res.chunks.map((chunk_api, i) => {
+            const chunk = Chunk.from_chunk_api(chunk_api);
+            // get the buffer from the original chunks
+            chunk.zip_frags(chunks[i], (frag, other_frag) => {
+                frag.block = other_frag.block;
+            });
+            return chunk;
+        });
+        return res_chunks;
     }
 
     /**
@@ -141,8 +98,8 @@ class MapClient {
     async put_mapping() {
         // TODO should we filter out chunk.had_errors from put mapping?
         await this.rpc_client.object.put_mapping({
-            chunks: this.chunks_mapping.map(pick_chunk_attrs),
-            move_to_tier: this.move_to_tier,
+            chunks: this.chunks_mapping.map(Chunk.to_chunk_api),
+            move_to_tier: this.move_to_tier._id,
         });
     }
 
@@ -157,7 +114,7 @@ class MapClient {
                 this.had_errors = true;
                 dbg.warn('MapClient.process_mapping: chunk ERROR',
                     err.stack || err, 'chunk', chunk,
-                    err.chunks ? 'err.chunks ' + inspect(err.chunks) : '',
+                    err.chunks ? 'err.chunks ' + util.inspect(err.chunks) : '',
                 );
                 return chunk;
             }
@@ -165,8 +122,8 @@ class MapClient {
     }
 
     /**
-     * @param {nb.ChunkInfo} chunk 
-     * @returns {Promise<nb.ChunkInfo>}
+     * @param {Chunk} chunk 
+     * @returns {Promise<Chunk>}
      */
     async process_chunk(chunk) {
         dbg.log0('MapClient.process_chunk: allocations needed for chunk', chunk);
@@ -191,14 +148,8 @@ class MapClient {
                     throw err;
                 }
                 dbg.warn('UPLOAD:', 'write part reallocate on ERROR', err);
-                const res = await this.rpc_client.object.get_mapping({
-                    chunks: [pick_chunk_attrs(chunk)],
-                    location_info: this.location_info,
-                    move_to_tier: this.move_to_tier,
-                    check_dups: this.check_dups,
-                });
-                chunk = res.chunks[0];
-                chunk[util.inspect.custom] = custom_inspect_chunk;
+                const [chunk_map] = await this.get_mapping([chunk]);
+                chunk = chunk_map;
                 if (chunk.dup_chunk) return chunk;
             }
         }
@@ -206,7 +157,7 @@ class MapClient {
     }
 
     /**
-     * @param {nb.ChunkInfo} chunk 
+     * @param {Chunk} chunk 
      */
     async read_entire_chunk(chunk) {
         const part = { ...chunk.parts[0], desc: { chunk: chunk._id } };
@@ -221,8 +172,8 @@ class MapClient {
     }
 
     /**
-     * @param {nb.ChunkInfo} chunk 
-     * @param {nb.FragInfo} frag 
+     * @param {Chunk} chunk 
+     * @param {Frag} frag 
      */
     async process_frag(chunk, frag) {
         if (!frag.allocations) return;
@@ -231,14 +182,14 @@ class MapClient {
             const first_alloc = frag.allocations[0];
             const rest_allocs = frag.allocations.slice(1);
             await this.retry_write_block(first_alloc.block, frag.block);
-            await P.map(rest_allocs, target_alloc => this.retry_replicate_blocks(first_alloc.block, target_alloc.block));
+            await P.map(rest_allocs, alloc => this.retry_replicate_blocks(alloc.block, first_alloc.block));
         } else if (accessible_blocks && accessible_blocks.length) {
             let next_source = Math.floor(Math.random() * accessible_blocks.length);
             dbg.log0('JAJA replicate block', accessible_blocks, next_source);
             await P.map(frag.allocations, async alloc => {
                 const source_block = accessible_blocks[next_source];
                 next_source = (next_source + 1) % accessible_blocks.length;
-                return this.retry_replicate_blocks(source_block, alloc.block);
+                return this.retry_replicate_blocks(alloc.block, source_block);
             });
         } else {
             // we already know that this chunk cannot be read here
@@ -254,17 +205,18 @@ class MapClient {
     /**
      * retry the write operation
      * once retry exhaust we report and throw an error
+     * @param {Block} block
+     * @param {Buffer} buffer
      */
     async retry_write_block(block, buffer) {
-        const block_md = block.block_md;
         let done = false;
         let retries = 0;
         while (!done) {
             try {
-                await this.write_block(block_md, buffer);
+                await this.write_block(block, buffer);
                 done = true;
             } catch (err) {
-                await this.report_error(block_md, 'write', err);
+                await this.report_error(block, 'write', err);
                 if (err.rpc_code === 'NO_BLOCK_STORE_SPACE') throw err;
                 retries += 1;
                 if (retries > config.IO_WRITE_BLOCK_RETRIES) throw err;
@@ -276,18 +228,18 @@ class MapClient {
     /**
      * retry the replicate operations
      * once any retry exhaust we report and throw an error
-     * @param {nb.BlockInfo} source_block
-     * @param {nb.BlockInfo} target_block
+     * @param {Block} block
+     * @param {Block} source_block
      */
-    async retry_replicate_blocks(source_block, target_block) {
+    async retry_replicate_blocks(block, source_block) {
         let done = false;
         let retries = 0;
         while (!done) {
             try {
-                await this.replicate_block(source_block.block_md, target_block.block_md);
+                await this.replicate_block(block, source_block);
                 done = true;
             } catch (err) {
-                await this.report_error(target_block.block_md, 'replicate', err);
+                await this.report_error(block, 'replicate', err);
                 if (err.rpc_code === 'NO_BLOCK_STORE_SPACE') throw err;
                 retries += 1;
                 if (retries > config.IO_REPLICATE_BLOCK_RETRIES) throw err;
@@ -298,40 +250,49 @@ class MapClient {
 
     /**
      * write a block to the storage node
+     * limit writes per agent + global IO semaphore to limit concurrency
+     * @param {Block} block
+     * @param {Buffer} buffer
      */
-    async write_block(block_md, buffer) {
-        // limit writes per agent + global IO semaphore to limit concurrency
-        await this.block_write_sem_agent.surround_key(String(block_md.node), async () =>
+    async write_block(block, buffer) {
+        await this.block_write_sem_agent.surround_key(String(block.node_id), async () =>
             this.block_write_sem_global.surround(async () => {
-                dbg.log1('UPLOAD:', this.desc, 'write block', block_md.id, block_md.address, buffer.length);
+                dbg.log1('UPLOAD:', this.desc, 'write block',
+                    'buffer', buffer.length,
+                    'to', block._id, 'node', block.node_id, block.node.name, block.node.rpc_address);
 
                 this._error_injection_on_write();
 
                 return block_store_client.write_block(this.rpc_client, {
+                    block_md: block.to_block_md_api(),
                     [RPC_BUFFERS]: { data: buffer },
-                    block_md,
                 }, {
-                    address: block_md.address,
+                    address: block.node.rpc_address,
                     timeout: config.IO_WRITE_BLOCK_TIMEOUT,
                 });
             }));
     }
 
-    async replicate_block(source_md, target_md) {
-        // limit replicates per agent + Global IO semaphore to limit concurrency
-        await this.block_replicate_sem_agent.surround_key(String(target_md.node), async () =>
+    /**
+     * write a block to the storage node
+     * limit replicates per agent + Global IO semaphore to limit concurrency
+     * @param {Block} block
+     * @param {Block} source_block
+     */
+    async replicate_block(block, source_block) {
+        await this.block_replicate_sem_agent.surround_key(String(block.node_id), async () =>
             this.block_replicate_sem_global.surround(async () => {
-                dbg.log1('UPLOAD:', this.desc,
-                    'replicate block', source_md.id, source_md.address,
-                    'to', target_md.id, target_md.address);
+                dbg.log1('UPLOAD:', this.desc, 'replicate block',
+                    'from', source_block._id, 'node', source_block.node._id, source_block.node.name, source_block.node.rpc_address,
+                    'to', block._id, 'node', block.node_id, block.node.name, block.node.rpc_address);
 
                 this._error_injection_on_write();
 
                 return this.rpc_client.block_store.replicate_block({
-                    target: target_md,
-                    source: source_md,
+                    target: block.to_block_md_api(),
+                    source: block.to_block_md_api(),
                 }, {
-                    address: target_md.address,
+                    address: block.node.rpc_address,
                     timeout: config.IO_REPLICATE_BLOCK_TIMEOUT,
                 });
             }));
@@ -346,36 +307,4 @@ class MapClient {
 
 }
 
-function pick_chunk_attrs(chunk) {
-    const c = _.pick(chunk, CHUNK_ATTRS);
-    c.frags = _.map(c.frags, frag => _.pick(frag, FRAG_ATTRS));
-    c.parts = _.map(c.parts, part => _.pick(part, PART_ATTRS));
-    return c;
-}
-
-function set_blocks_to_maps(chunk, chunk_mapping) {
-    for (const frag of chunk_mapping.frags) {
-        const frag_with_data = _.find(
-            chunk.frags,
-            _.matches(_.pick(frag, 'data_index', 'parity_index', 'lrc_index'))
-        );
-        frag.block = frag_with_data.block;
-    }
-}
-
-function inspect(obj) {
-    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
-}
-
-/**
- * avoid printing rpc_client to logs, it's ugly
- * also avoid infinite recursion and omit inspect function
- * @this {nb.ChunkInfo}
- */
-function custom_inspect_chunk() {
-    return inspect(_.omit(this, 'rpc_client', 'parts', util.inspect.custom));
-}
-
-
 exports.MapClient = MapClient;
-exports.pick_chunk_attrs = pick_chunk_attrs;

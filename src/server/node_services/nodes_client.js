@@ -307,5 +307,7 @@ class NodesClient {
 
 }
 
+NodesClient._instance = undefined;
+
 exports.NodesClient = NodesClient;
 exports.instance = NodesClient.instance;

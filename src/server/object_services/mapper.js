@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../../api/nb.d.ts" />
+/// <reference path="../../sdk/nb.d.ts" />
 
 const _ = require('lodash');
 const util = require('util');
@@ -10,69 +10,6 @@ const dbg = require('../../util/debug_module')(__filename);
 const config = require('../../../config');
 const size_utils = require('../../util/size_utils');
 const system_store = require('../system_services/system_store').get_instance();
-
-
-/**
- *
- *
- * ChunkMapper
- *
- *
- */
-class ChunkMapper {
-
-    constructor(chunk) {
-        this.chunk = chunk;
-        this.is_write = !chunk._id;
-        this.frags_by_index = _.keyBy(chunk.frags, _frag_index);
-        this.accessible = this.is_accessible();
-        dbg.log0('JAJA chunks in ChunkMapper', util.inspect(chunk, { depth: null }));
-    }
-
-    is_accessible() {
-
-        const {
-            frags_by_index,
-            chunk: {
-                chunk_coder_config: {
-                    data_frags = 1,
-                    parity_frags = 0,
-                }
-            },
-        } = this;
-
-        let num_accessible = 0;
-
-        for (let data_index = 0; data_index < data_frags; ++data_index) {
-            const frag_index = `D${data_index}`;
-            const frag = frags_by_index[frag_index];
-            if (frag.blocks) {
-                for (let i = 0; i < frag.blocks.length; ++i) {
-                    if (frag.blocks[i].accessible) {
-                        num_accessible += 1;
-                        break;
-                    }
-                }
-            }
-        }
-        if (num_accessible >= data_frags) return true;
-
-        for (let parity_index = 0; parity_index < parity_frags; ++parity_index) {
-            const frag_index = `P${parity_index}`;
-            const frag = frags_by_index[frag_index];
-            if (frag.blocks) {
-                for (let i = 0; i < frag.blocks.length; ++i) {
-                    if (frag.blocks[i].accessible) {
-                        num_accessible += 1;
-                        break;
-                    }
-                }
-            }
-        }
-        return num_accessible >= data_frags;
-    }
-}
-
 
 /**
  *
@@ -83,6 +20,12 @@ class ChunkMapper {
  */
 class MirrorMapper {
 
+    /**
+     * 
+     * @param {nb.TierMirror} mirror 
+     * @param {nb.ChunkCoderConfig} chunk_coder_config 
+     * @param {number} mirror_index 
+     */
     constructor(mirror, chunk_coder_config, mirror_index) {
         const { _id: mirror_id, spread_pools } = mirror;
         this.mirror_group = String(mirror_id);
@@ -262,9 +205,9 @@ class MirrorMapper {
             // Notice that we push the minimum required replicas in higher priority
             // This is done in order to insure that we will allocate them before the additional replicas
             if (num_missing > 0) {
-                tier_mapping.allocations = tier_mapping.allocations || [];
+                frag.allocations = frag.allocations || [];
                 for (let i = 0; i < num_missing; ++i) {
-                    tier_mapping.allocations.push({ frag, pools, sources, mirror_group: this.mirror_group });
+                    frag.allocations.push({ frag, pools, sources, mirror_group: this.mirror_group });
                 }
             }
 
@@ -475,9 +418,14 @@ class TieringMapper {
 const tiering_mapper_cache = {
     hits: 0,
     miss: 0,
+    /** @type {WeakMap<nb.Tiering,TieringMapper>} */
     map: new WeakMap(),
 };
 
+/**
+ * @param {nb.Tiering} tiering The bucket tiering
+ * @returns {TieringMapper}
+ */
 function _get_cached_tiering_mapper(tiering) {
     let tiering_mapper = tiering_mapper_cache.map.get(tiering);
     if (tiering_mapper) {
@@ -498,9 +446,9 @@ function _get_cached_tiering_mapper(tiering) {
  * map_chunk() the main mapper functionality
  * decide how to map a given chunk, either new, or existing
  *
- * @param {Object} chunk The data chunk, with chunk.blocks populated
- * @param {Object} tiering The bucket tiering
- * @param {Object} tiering_status See node_allocator.get_tiering_status()
+ * @param {nb.Chunk} chunk The data chunk, with chunk.blocks populated
+ * @param {nb.Tiering} tiering The bucket tiering
+ * @param {nb.TieringStatus} tiering_status See node_allocator.get_tiering_status()
  * @returns {Object} mapping
  */
 function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
@@ -559,153 +507,6 @@ function get_num_blocks_per_chunk(tier) {
     return replicas * (data_frags + parity_frags);
 }
 
-function get_part_info(part, adminfo, tiering_status, location_info) {
-    const chunk_info = get_chunk_info(part.chunk, adminfo, tiering_status, location_info);
-    return {
-        start: part.start,
-        end: part.end,
-        seq: part.seq,
-        multipart_id: part.multipart,
-        chunk_id: part.chunk._id,
-        chunk: chunk_info,
-        chunk_offset: part.chunk_offset, // currently undefined
-    };
-}
-
-/**
- * @returns {nb.ChunkInfo}
- */
-function get_chunk_info(chunk, adminfo, tiering_status, location_info) {
-    const bucket = chunk.bucket;
-    let mapping;
-    let allocations_by_frag_id;
-    let deletions_by_frag_id;
-    let future_deletions_by_frag_id;
-    if (tiering_status) {
-        mapping = map_chunk(chunk, chunk.tier, bucket.tiering, tiering_status, location_info);
-        allocations_by_frag_id = _.groupBy(mapping.allocations, allocation => String(allocation.frag._id));
-        deletions_by_frag_id = _.groupBy(mapping.deletions, deletion => String(deletion.frag));
-        future_deletions_by_frag_id = _.groupBy(mapping.future_deletions, deletion => String(deletion.frag));
-    }
-    const blocks_by_frag_id = _.groupBy(chunk.blocks, 'frag');
-    if (adminfo) {
-        if (!mapping.accessible) {
-            adminfo = { health: 'unavailable' };
-        } else if (mapping.allocations) {
-            adminfo = { health: 'building' };
-        } else {
-            adminfo = { health: 'available' };
-        }
-    }
-    return {
-        _id: chunk._id,
-        bucket: bucket._id,
-        tier: chunk.tier._id,
-        dup_chunk: chunk.dup_chunk,
-        missing_frags: Boolean(mapping && mapping.missing_frags),
-        chunk_coder_config: chunk.chunk_coder_config,
-        size: chunk.size,
-        frag_size: chunk.frag_size,
-        compress_size: chunk.compress_size,
-        digest_b64: chunk.digest && chunk.digest.toString('base64'),
-        cipher_key_b64: chunk.cipher_key && chunk.cipher_key.toString('base64'),
-        cipher_iv_b64: chunk.cipher_iv && chunk.cipher_iv.toString('base64'),
-        cipher_auth_tag_b64: chunk.cipher_auth_tag && chunk.cipher_auth_tag.toString('base64'),
-        frags: chunk.frags && _.map(chunk.frags, frag =>
-            get_frag_info(chunk, frag, blocks_by_frag_id[frag._id], {
-                    allocations: allocations_by_frag_id && allocations_by_frag_id[frag._id],
-                    deletions: deletions_by_frag_id && deletions_by_frag_id[frag._id],
-                    future_deletions: future_deletions_by_frag_id && future_deletions_by_frag_id[frag._id],
-                },
-                adminfo,
-                location_info)
-        ),
-        adminfo: adminfo || undefined,
-    };
-}
-
-
-function get_frag_info(chunk, frag, blocks, mapping, adminfo, location_info) {
-    // sorting the blocks to have most available node on front
-    // TODO GUY OPTIMIZE what about load balancing - maybe random the order of good blocks
-    if (blocks) blocks.sort(location_info ? _block_sorter_local(location_info) : _block_sorter_basic);
-    return {
-        _id: frag._id,
-        data_index: frag.data_index,
-        parity_index: frag.parity_index,
-        lrc_index: frag.lrc_index,
-        digest_b64: frag.digest && frag.digest.toString('base64'),
-        blocks: blocks && _.map(blocks, block => get_block_info(chunk, frag, block, adminfo)),
-        deletions: mapping.deletions ? _.map(mapping.deletions, block => ({
-            block_id: get_block_md(chunk, frag, block).id
-        })) : [],
-        future_deletions: mapping.future_deletions ? _.map(mapping.future_deletions, block => ({
-            block_id: get_block_md(chunk, frag, block).id
-        })) : [],
-        allocations: mapping.allocations ? _.map(mapping.allocations, alloc => get_alloc_info(alloc)) : [],
-    };
-}
-
-
-function get_block_info(chunk, frag, block, adminfo) {
-    if (adminfo) {
-        const node = block.node;
-        const system = system_store.data.get_by_id(block.system);
-        const pool = system.pools_by_name[node.pool];
-        const bucket = chunk.bucket;
-
-        // Setting mirror_group for the block:
-        // We return mirror_group undefined to mark blocks that are no longer relevant to the tiering policy,
-        // such as disabled tiers or pools that were removed completely from the tierig policy.
-        let mirror_group;
-        _.forEach(bucket.tiering.tiers, ({ tier, disabled }) => {
-            if (disabled) return;
-            _.forEach(tier.mirrors, mirror => {
-                if (_.find(mirror.spread_pools, pool)) {
-                    mirror_group = String(mirror._id);
-                }
-            });
-        });
-
-        adminfo = {
-            pool_name: pool.name,
-            mirror_group,
-            node_name: node.os_info.hostname + '#' + node.host_seq,
-            host_name: node.os_info.hostname,
-            mount: node.drive.mount,
-            node_ip: node.ip,
-            in_cloud_pool: Boolean(node.is_cloud_node),
-            in_mongo_pool: Boolean(node.is_mongo_node),
-            online: Boolean(node.online),
-        };
-    }
-    return {
-        block_md: get_block_md(chunk, frag, block),
-        accessible: _is_block_accessible(block),
-        misplaced: _is_block_misplaced(block),
-        adminfo: adminfo || undefined,
-    };
-}
-
-function get_alloc_info(alloc) {
-    return {
-        mirror_group: alloc.mirror_group,
-        block: alloc.block,
-    };
-}
-
-function get_block_md(chunk, frag, block) {
-    return {
-        size: block.size,
-        id: block._id,
-        address: block.node.rpc_address,
-        node: block.node._id,
-        node_type: block.node.node_type,
-        pool: block.pool,
-        digest_type: chunk.chunk_coder_config.frag_digest_type,
-        digest_b64: frag.digest_b64 || (frag.digest && frag.digest.toString('base64')),
-    };
-}
 
 function _is_block_accessible(block) {
     return block.node.readable && !block.missing && !block.tempered;
@@ -753,6 +554,10 @@ function _block_newer_first_sort(block1, block2) {
     return block2._id.getTimestamp().getTime() - block1._id.getTimestamp().getTime();
 }
 
+/**
+ * @param {nb.Frag} frag
+ * @returns {string}
+ */
 function _frag_index(frag) {
     if (frag.data_index >= 0) return `D${frag.data_index}`;
     if (frag.parity_index >= 0) return `P${frag.parity_index}`;
@@ -760,8 +565,12 @@ function _frag_index(frag) {
     throw new Error('BAD FRAG ' + JSON.stringify(frag));
 }
 
+/**
+ * @param {nb.Pool} pool 
+ * @returns {boolean}
+ */
 function _pool_has_redundancy(pool) {
-    return pool.cloud_pool_info || pool.mongo_pool_info;
+    return Boolean(pool.cloud_pool_info || pool.mongo_pool_info);
 }
 
 function should_rebuild_chunk_to_local_mirror(mapping, location_info) {
@@ -807,10 +616,10 @@ exports.select_tier_for_write = select_tier_for_write;
 exports.is_chunk_good_for_dedup = is_chunk_good_for_dedup;
 exports.assign_node_to_block = assign_node_to_block;
 exports.get_num_blocks_per_chunk = get_num_blocks_per_chunk;
-exports.get_part_info = get_part_info;
-exports.get_chunk_info = get_chunk_info;
-exports.get_frag_info = get_frag_info;
-exports.get_block_info = get_block_info;
-exports.get_block_md = get_block_md;
-exports.get_alloc_info = get_alloc_info;
+// exports.get_part_info = get_part_info;
+// exports.get_chunk_info = get_chunk_info;
+// exports.get_frag_info = get_frag_info;
+// exports.get_block_info = get_block_info;
+// exports.get_block_md = get_block_md;
+// exports.get_alloc_info = get_alloc_info;
 exports.should_rebuild_chunk_to_local_mirror = should_rebuild_chunk_to_local_mirror;

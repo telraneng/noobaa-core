@@ -161,13 +161,13 @@ coretest.describe_mapper_test_case({
         const { chunks } = obj;
         const blocks_to_delete = [];
         _.forEach(chunks, chunk => {
-            console.log('Keeping minimal frags in chunk', inspect({
+            console.log('Keeping minimal frags in chunk', {
                 ...chunk,
                 frags: chunk.frags.map(frag => ({
                     ...frag,
                     blocks: frag.blocks && frag.blocks.map(block => _.omit(block, 'node'))
                 }))
-            }));
+            });
             const frags_by_id = _.keyBy(chunk.frags, '_id');
             const frags_to_delete = new Set(_.sampleSize(chunk.frags, parity_frags));
             _.forEach(chunk.blocks, block => {
@@ -185,7 +185,7 @@ coretest.describe_mapper_test_case({
         const { chunks } = obj;
         const blocks_to_delete = [];
         _.forEach(chunks, chunk => {
-            console.log('Keeping minimal replicas in chunk', inspect(chunk));
+            console.log('Keeping minimal replicas in chunk', chunk);
             const frags_by_id = _.keyBy(chunk.frags, '_id');
             const blocks_by_frag_id = _.groupBy(chunk.blocks, 'frag');
             _.forEach(blocks_by_frag_id, (blocks, frag_id) => {
@@ -199,7 +199,7 @@ coretest.describe_mapper_test_case({
     }
 
     async function delete_blocks(blocks) {
-        console.log('Deleting blocks', inspect(blocks.map(block => _.pick(block, '_id', 'size', 'frag'))));
+        console.log('Deleting blocks', blocks.map(block => _.pick(block, '_id', 'size', 'frag')));
         return P.join(
             map_deleter.delete_blocks_from_nodes(blocks),
             MDStore.instance().update_blocks_by_ids(_.map(blocks, '_id'), { deleted: new Date() })
@@ -239,7 +239,3 @@ coretest.describe_mapper_test_case({
     }
 
 });
-
-function inspect(obj) {
-    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
-}

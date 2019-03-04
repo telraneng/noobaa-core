@@ -104,8 +104,7 @@ class ObjectIO {
             'md_conditions'
         );
         try {
-            dbg.log0('upload_object: start upload',
-                util.inspect(create_params, { colors: true, depth: null, breakLength: Infinity }));
+            dbg.log0('upload_object: start upload', create_params);
             const create_reply = await params.client.object.create_object_upload(create_params);
             params.obj_id = create_reply.obj_id;
             params.tier = create_reply.tier;
@@ -941,10 +940,6 @@ function _get_io_semaphore_size(size) {
     // This is done as a temporary quick fix and is not a good one
     return _.isNumber(size) ? Math.min(config.IO_STREAM_SEMAPHORE_SIZE_CAP, size) :
         config.IO_STREAM_MINIMAL_SIZE_LOCK;
-}
-
-function inspect(obj) {
-    return util.inspect(obj, { depth: null, breakLength: Infinity, colors: true });
 }
 
 module.exports = ObjectIO;

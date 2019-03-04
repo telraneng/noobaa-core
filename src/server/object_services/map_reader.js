@@ -2,18 +2,18 @@
 'use strict';
 
 const _ = require('lodash');
+const util = require('util');
 
 const P = require('../../util/promise');
 const dbg = require('../../util/debug_module')(__filename);
 const config = require('../../../config.js');
 const mapper = require('./mapper');
-const util = require('util');
 const MDStore = require('./md_store').MDStore;
-const node_allocator = require('../node_services/node_allocator');
-const system_store = require('../system_services/system_store').get_instance();
-const system_utils = require('../utils/system_utils');
+const map_server = require('./map_server');
 const server_rpc = require('../server_rpc');
 const auth_server = require('../common_services/auth_server');
+const system_store = require('../system_services/system_store').get_instance();
+const node_allocator = require('../node_services/node_allocator');
 
 
 /**
@@ -101,7 +101,7 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
     const tiering_status_by_bucket_id = {};
 
     for (const chunk of chunks) {
-        system_utils.prepare_chunk_for_mapping(chunk);
+        map_server.populate_chunk(chunk);
     }
 
     await _load_chunk_mappings(chunks, tiering_status_by_bucket_id);
@@ -114,7 +114,7 @@ async function read_parts_mappings({ parts, adminfo, set_obj, location_info, sam
             const tiering_status = tiering_status_by_bucket_id[bucket._id];
             const selected_tier = mapper.select_tier_for_write(bucket.tiering, tiering_status);
             for (const chunk of chunks) {
-                system_utils.prepare_chunk_for_mapping(chunk);
+                map_server.populate_chunk(chunk);
                 if (!chunk.tier._id || !_.isEqual(chunk.tier._id, selected_tier._id)) {
                     dbg.log0('Chunk with low tier will be sent for rebuilding', chunk);
                     chunks_to_scrub.push(chunk);

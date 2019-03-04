@@ -68,7 +68,7 @@ module.exports = {
         'max-depth': ['error', 5],
 
         // max classed per file
-        'max-classes-per-file': ['error', 5],
+        'max-classes-per-file': 'off',
 
         // max file length is 300 by default, we accept longer files
         'max-lines': ['error', 2000],
