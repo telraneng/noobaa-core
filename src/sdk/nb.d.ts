@@ -91,21 +91,23 @@ interface Tiering {
     }[];
 }
 
+type TierStatus = {
+    pools: {
+        [pool_id: string]: {
+            valid_for_allocation: boolean;
+            num_nodes: number;
+            resource_type: ResourceType;
+        }
+    };
+    mirrors_storage: {
+        free: BigInt;
+        regular_free: BigInt;
+        redundant_free: BigInt;
+    }[];
+};
+
 type TieringStatus = {
-    [tier_id: string]: {
-        pools: {
-            [pool_id: string]: {
-                valid_for_allocation: boolean;
-                num_nodes: number;
-                resource_type: ResourceType;
-            }
-        };
-        mirrors_storage: {
-            free: BigInt;
-            regular_free: BigInt;
-            redundant_free: BigInt;
-        }[];
-    }
+    [tier_id: string]: TierStatus
 };
 
 interface Bucket {

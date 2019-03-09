@@ -80,10 +80,11 @@ class MapClient {
             check_dups: this.check_dups,
         });
         const res_chunks = res.chunks.map((chunk_api, i) => {
+            const input_chunk = chunks[i];
             const chunk = Chunk.from_chunk_api(chunk_api);
-            // get the buffer from the original chunks
-            chunk.zip_frags(chunks[i], (frag, other_frag) => {
-                frag.block = other_frag.block;
+            // get the buffer from the input chunks
+            chunk.match_frags(input_chunk, (frag, input_frag) => {
+                frag.block = input_frag.block;
             });
             return chunk;
         });

@@ -31,6 +31,7 @@ const BucketStatsStore = require('../analytic_services/bucket_stats_store').Buck
 const UsageReportStore = require('../analytic_services/usage_report_store').UsageReportStore;
 const events_dispatcher = require('./events_dispatcher');
 const IoStatsStore = require('../analytic_services/io_stats_store').IoStatsStore;
+const { Chunk } = require('../../sdk/map_types');
 
 // short living cache for objects
 // the purpose is to reduce hitting the DB many many times per second during upload/download.
@@ -234,9 +235,15 @@ async function abort_object_upload(req) {
  */
 async function get_mapping(req) {
     throw_if_maintenance(req);
-    const get_map = new map_server.GetMapping(req.rpc_params);
-    const chunks = await get_map.run();
-    return { chunks: chunks.map(chunk => chunk.to_chunk_api()) };
+    const { chunks, move_to_tier, check_dups, location_info } = req.rpc_params;
+    const get_map = new map_server.GetMapping({
+        chunks: chunks.map(Chunk.from_chunk_api),
+        check_dups: Boolean(check_dups),
+        move_to_tier: move_to_tier && system_store.data.get_by_id(move_to_tier),
+        location_info,
+    });
+    const res_chunks = await get_map.run();
+    return { chunks: res_chunks.map(chunk => chunk.to_chunk_api()) };
 }
 
 
@@ -248,7 +255,11 @@ async function get_mapping(req) {
 async function put_mapping(req) {
     throw_if_maintenance(req);
     // const obj = await find_cached_object_upload(req);
-    const put_map = new map_server.PutMapping(req.rpc_params);
+    const { chunks, move_to_tier } = req.rpc_params;
+    const put_map = new map_server.PutMapping({
+        chunks: chunks.map(Chunk.from_chunk_api),
+        move_to_tier: move_to_tier && system_store.data.get_by_id(move_to_tier),
+    });
     await put_map.run();
 }
 
@@ -260,14 +271,19 @@ async function put_mapping(req) {
  */
 async function create_multipart(req) {
     throw_if_maintenance(req);
-    const multipart = _.pick(req.rpc_params, 'num', 'size', 'md5_b64', 'sha256_b64');
     const obj = await find_object_upload(req);
-    multipart._id = MDStore.instance().make_md_id();
-    multipart.system = req.system._id;
-    multipart.bucket = req.bucket._id;
-    multipart.obj = obj._id;
-    multipart.uncommitted = true;
-    const tier = await map_server.select_tier_for_write(req.bucket, multipart.obj);
+    const tier = await map_server.select_tier_for_write(req.bucket, obj._id);
+    const multipart = {
+        _id: MDStore.instance().make_md_id(),
+        system: req.system._id,
+        bucket: req.bucket._id,
+        obj: obj._id,
+        num: req.rpc_params.num,
+        size: req.rpc_params.size,
+        md5_b64: req.rpc_params.md5_b64,
+        sha256_b64: req.rpc_params.sha256_b64,
+        uncommitted: true,
+    };
     await MDStore.instance().insert_multipart(multipart);
     return {
         multipart_id: multipart._id,

@@ -354,7 +354,7 @@ class ObjectIO {
                 chunk.tier = params.tier;
                 chunk.bucket = params.bucket_id;
                 chunk.parts = [part];
-                dbg.log0('UPLOAD: part', part.desc, inspect(chunk));
+                dbg.log0('UPLOAD: part', part.desc, chunk);
             }
             const mc = new map_client.MapClient({
                 chunks,

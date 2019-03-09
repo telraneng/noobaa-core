@@ -106,7 +106,7 @@ class Chunk {
      * @param {Chunk} other_chunk
      * @param {( f1: Frag, f2: Frag ) => void} frag_func
      */
-    zip_frags(other_chunk, frag_func) {
+    match_frags(other_chunk, frag_func) {
         const other_frags_by_index = _.keyBy(other_chunk.frags, 'frag_index');
         for (const frag of this.frags) {
             const other_frag = other_frags_by_index[frag.frag_index];

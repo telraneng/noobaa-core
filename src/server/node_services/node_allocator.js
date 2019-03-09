@@ -127,9 +127,13 @@ function refresh_tiers_alloc(tiering, force) {
     return group.promise;
 }
 
-
+/**
+ * @param {nb.Tiering} tiering 
+ * @returns {nb.TieringStatus}
+ */
 function get_tiering_status(tiering) {
-    let tiering_status_by_tier = {};
+    /** @type {nb.TieringStatus} */
+    const tiering_status_by_tier = {};
     _.each(tiering.tiers, ({ tier }) => {
         let tier_pools = [];
         // Inside the Tier, pools are unique and we don't need to filter afterwards

@@ -21,7 +21,7 @@ const node_allocator = require('../node_services/node_allocator');
 const PeriodicReporter = require('../../util/periodic_reporter');
 const Barrier = require('../../util/barrier');
 const KeysSemaphore = require('../../util/keys_semaphore');
-const { Chunk } = require('../../sdk/map_client');
+const { Chunk, Frag, Block } = require('../../sdk/map_types');
 
 const map_reporter = new PeriodicReporter('map_reporter');
 const make_room_semaphore = new KeysSemaphore(1);
@@ -44,19 +44,18 @@ class GetMapping {
 
     /**
      * @param {Object} props
-     * @param {Object[]} props.chunks
-     * @param {nb.ID} [props.move_to_tier]
-     * @param {boolean} [props.check_dups]
+     * @param {Chunk[]} props.chunks
+     * @param {boolean} props.check_dups
+     * @param {nb.Tier} [props.move_to_tier]
      * @param {nb.LocationInfo} [props.location_info]
      */
     constructor(props) {
-        this.chunks = props.chunks.map(Chunk.from_chunk_api);
-        /** @type {nb.Tier} */
-        this.move_to_tier = props.move_to_tier && system_store.data.get_by_id(props.move_to_tier);
-        this.check_dups = Boolean(props.check_dups);
+        this.chunks = props.chunks;
+        this.move_to_tier = props.move_to_tier;
+        this.check_dups = props.check_dups;
         this.location_info = props.location_info;
-        this.chunks_per_bucket = _.groupBy(this.chunks, chunk => String(chunk.bucket._id));
 
+        this.chunks_per_bucket = _.groupBy(this.chunks, chunk => String(chunk.bucket._id));
         // assert move_to_tier is only used for chunks on the same bucket
         if (this.move_to_tier) assert.strictEqual(Object.keys(this.chunks_per_bucket).length, 1);
         Object.seal(this);
@@ -92,9 +91,6 @@ class GetMapping {
             const dup_chunks_db = await MDStore.instance().find_chunks_by_dedup_key(bucket, dedup_keys);
             const dup_chunks = dup_chunks_db.map(Chunk.from_chunk_db);
             dbg.log0('GetMapping.dup_chunks', dup_chunks);
-            for (const dup_chunk of dup_chunks) {
-                populate_chunk(dup_chunk);
-            }
             await this.prepare_chunks_group(dup_chunks);
             for (const dup_chunk of dup_chunks) {
                 if (mapper.is_chunk_good_for_dedup(dup_chunk)) {
@@ -179,16 +175,20 @@ class GetMapping {
             if (!node) {
                 dbg.warn(`GetMapping allocate_blocks: no nodes for allocation ` +
                     `avoid_nodes ${avoid_nodes.join(',')} ` +
-                    `pools ${pools.join(',')} ` +
-                    // `tier_for_write ${this.tier_for_write.name} ` +
-                    `tiering_status ${util.inspect(this.tiering_status)} `);
+                    `pools ${pools.join(',')} `
+                );
                 // chunk.frags = saved_frags;
                 return false;
             }
-            const block = {
+            const block = new Block({
                 _id: MDStore.instance().make_md_id(),
-            };
-            mapper.assign_node_to_block(block, node, chunk.bucket.system._id);
+                chunk,
+                frag,
+                node_id: node._id,
+                node,
+                pool: node.pool._id,
+                size: chunk.frag_size,
+            });
             const block_info = mapper.get_block_info(chunk, frag, block);
             alloc.block = block_info;
             frag.allocations = frag.allocations || [];
@@ -221,9 +221,10 @@ class GetMapping {
                 } catch (err) {
                     dbg.warn('GetMapping: preallocate_blocks failed, will retry',
                         `avoid_nodes ${avoid_nodes.join(',')} ` +
-                        `pools ${alloc.pools.join(',')} ` +
-                        `tier_for_write ${this.tier_for_write.name} ` +
-                        `tiering_status ${util.inspect(this.tiering_status)} `);
+                        `pools ${alloc.pools.join(',')} `
+                        // `tier_for_write ${this.tier_for_write.name} ` +
+                        // `tiering_status ${util.inspect(this.tiering_status)} `
+                    );
                     ok = false;
                 }
             });
@@ -255,13 +256,12 @@ class PutMapping {
 
     /**
      * @param {Object} props
-     * @param {Object[]} props.chunks
-     * @param {nb.ID} props.move_to_tier
+     * @param {Chunk[]} props.chunks
+     * @param {nb.Tier} props.move_to_tier
      */
     constructor(props) {
-        this.chunks = props.chunks.map(Chunk.from_chunk_api);
-        /** @type {nb.Tier} */
-        this.move_to_tier = props.move_to_tier && system_store.data.get_by_id(props.move_to_tier);
+        this.chunks = props.chunks;
+        this.move_to_tier = props.move_to_tier;
 
         this.new_blocks = [];
         this.new_chunks = [];

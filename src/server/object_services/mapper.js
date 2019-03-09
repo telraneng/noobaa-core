@@ -10,6 +10,25 @@ const dbg = require('../../util/debug_module')(__filename);
 const config = require('../../../config');
 const size_utils = require('../../util/size_utils');
 const system_store = require('../system_services/system_store').get_instance();
+const { Chunk, Frag, Block } = require('../../sdk/map_types');
+
+class TierMapping {
+    /**
+     * 
+     * @param {nb.Tier} tier 
+     * @param {boolean} accessible 
+     */
+    constructor(tier, accessible) {
+        this.tier = tier;
+        this.accessible = accessible;
+        this.blocks_in_use = [];
+        this.deletions = undefined;
+        this.future_deletions = undefined;
+        this.allocations = undefined;
+        this.missing_frags = undefined;
+        Object.seal(this);
+    }
+}
 
 /**
  *
@@ -21,7 +40,6 @@ const system_store = require('../system_services/system_store').get_instance();
 class MirrorMapper {
 
     /**
-     * 
      * @param {nb.TierMirror} mirror 
      * @param {nb.ChunkCoderConfig} chunk_coder_config 
      * @param {number} mirror_index 
@@ -37,8 +55,13 @@ class MirrorMapper {
         this.redundant_pools = pools_partitions[0];
         this.regular_pools = pools_partitions[1];
         this.mirror_index = mirror_index;
+        this.weight = -1;
     }
 
+    /**
+     * @param {nb.TierStatus} tier_status
+     * @param {nb.LocationInfo} location_info
+     */
     update_status(tier_status, location_info) {
         const { redundant_pools, spread_pools } = this;
         this.regular_pools_valid = false;
@@ -67,7 +90,9 @@ class MirrorMapper {
     }
 
     /**
-     * @return >0 if mapper1 is best for write, <0 if mapper2 is best for write.
+     * @param {MirrorMapper} mapper1
+     * @param {MirrorMapper} mapper2
+     * @returns {number} >0 if mapper1 is best for write, <0 if mapper2 is best for write.
      */
     static compare_mapper_for_write(mapper1, mapper2) {
         // when equal weight, pick at random to spread the writes load
@@ -75,27 +100,23 @@ class MirrorMapper {
         return (mapper1.weight - mapper2.weight) || (Math.random() - 0.5);
     }
 
-    map_mirror(chunk_mapper, tier_mapping) {
+    /**
+     * @param {Chunk} chunk
+     * @param {TierMapping} tier_mapping 
+     */
+    map_mirror(chunk, tier_mapping) {
 
         const {
-            chunk_coder_config: {
-                replicas = 1,
+            replicas = 1,
                 data_frags = 1,
                 parity_frags = 0,
-            }
-        } = this;
+        } = this.chunk_coder_config;
 
         const {
-            chunk: {
-                chunk_coder_config: {
-                    replicas: chunk_replicas = 1,
-                    data_frags: chunk_data_frags = 1,
-                    parity_frags: chunk_parity_frags = 0,
-                }
-            },
-            is_write,
-            frags_by_index,
-        } = chunk_mapper;
+            replicas: chunk_replicas = 1,
+            data_frags: chunk_data_frags = 1,
+            parity_frags: chunk_parity_frags = 0,
+        } = chunk.chunk_coder_config;
 
         // TODO GUY GAP handle change of data_frags between tier vs. chunk
         let desired_data_frags = data_frags;
@@ -113,24 +134,30 @@ class MirrorMapper {
         for (let data_index = 0; data_index < desired_data_frags; ++data_index) {
             const frag_index = `D${data_index}`;
             this._map_frag(
-                chunk_mapper,
+                chunk,
                 tier_mapping,
                 frags_by_index[frag_index],
-                desired_replicas,
-                is_write);
+                desired_replicas);
         }
         for (let parity_index = 0; parity_index < desired_parity_frags; ++parity_index) {
             const frag_index = `P${parity_index}`;
             this._map_frag(
-                chunk_mapper,
+                chunk,
                 tier_mapping,
                 frags_by_index[frag_index],
-                desired_replicas,
-                is_write);
+                desired_replicas);
         }
     }
 
-    _map_frag(chunk_mapper, tier_mapping, frag, replicas, is_write) {
+    /**
+     * 
+     * @param {Chunk} chunk 
+     * @param {TierMapping} tier_mapping 
+     * @param {Frag} frag 
+     * @param {number} replicas
+     * @returns {void}
+     */
+    _map_frag(chunk, tier_mapping, frag, replicas) {
         const {
             pools_by_id,
             regular_pools,
@@ -143,7 +170,7 @@ class MirrorMapper {
         const used_blocks = [];
 
         // rebuild from other frags
-        if (!accessible && !is_write) {
+        if (!accessible && !chunk.is_new) {
             dbg.log0('JAJA pushing to missing frag', util.inspect(frag), util.inspect(frag.blocks));
             tier_mapping.missing_frags = tier_mapping.missing_frags || [];
             tier_mapping.missing_frags.push(frag);
@@ -228,7 +255,10 @@ class MirrorMapper {
         }
     }
 
-    // Pick random pool which sets the allocation type between redundant/regular pools
+    /**
+     * Pick random pool which sets the allocation type between redundant/regular pools
+     * @returns {nb.Pool[]}
+     */
     _pick_pools() {
         // handle the corner cases of redundant pools not valid and regular are valid (or vice versa).
         // in that case, return regular pools (or redundant pools in the opposite case).
@@ -256,6 +286,13 @@ class MirrorMapper {
  */
 class TierMapper {
 
+    /**
+     * @param {Object} props
+     * @param {nb.Tier} props.tier
+     * @param {number} props.order
+     * @param {boolean} [props.spillover]
+     * @param {boolean} [props.disabled]
+     */
     constructor({ tier, order, spillover }) {
         this.tier = tier;
         this.order = order;
@@ -266,6 +303,10 @@ class TierMapper {
         this.write_mapper = this.mirror_mappers[0];
     }
 
+    /**
+     * @param {nb.TierStatus} tier_status
+     * @param {nb.LocationInfo} location_info
+     */
     update_status(tier_status, location_info) {
         const { mirror_mappers } = this;
         this.write_mapper = undefined;
@@ -294,31 +335,27 @@ class TierMapper {
             available_to_upload.greater(config.MAX_TIER_FREE_THRESHOLD);
     }
 
-    map_tier(chunk_mapper) {
+    /**
+     * @param {Chunk} chunk
+     * @returns {TierMapping}
+     */
+    map_tier(chunk) {
         const { mirror_mappers, write_mapper } = this;
-        const { is_write, accessible } = chunk_mapper;
+        const accessible = chunk.is_accessible;
 
-        const tier_mapping = Object.seal({
-            tier: this.tier,
-            accessible,
-            blocks_in_use: [],
-            deletions: undefined,
-            future_deletions: undefined,
-            allocations: undefined,
-            missing_frags: undefined,
-        });
+        const tier_mapping = new TierMapping(this.tier, accessible);
 
-        if (is_write) {
-            write_mapper.map_mirror(chunk_mapper, tier_mapping);
+        if (chunk.is_new) {
+            write_mapper.map_mirror(chunk, tier_mapping);
         } else {
             // TODO GUY OPTIMIZE try to bail out faster if best_mapping is better
             for (let i = 0; i < mirror_mappers.length; ++i) {
                 const mirror_mapper = mirror_mappers[i];
-                mirror_mapper.map_mirror(chunk_mapper, tier_mapping);
+                mirror_mapper.map_mirror(chunk, tier_mapping);
             }
         }
 
-        const { blocks } = chunk_mapper.chunk;
+        const blocks = _.flatMap(chunk.frags, frag => frag.blocks);
         const used_blocks = _.uniq(tier_mapping.blocks_in_use);
         const unused_blocks = _.uniq(_.difference(blocks, used_blocks));
         if (unused_blocks.length) {
@@ -338,7 +375,7 @@ class TierMapper {
                         'unused_blocks.length', unused_blocks.length,
                         'tier', this.tier,
                         'tier_mapping', tier_mapping,
-                        'chunk', chunk_mapper.chunk,
+                        'chunk', chunk,
                         'used_blocks', used_blocks,
                         'unused_blocks', unused_blocks);
                 } else {
@@ -363,6 +400,9 @@ class TierMapper {
  */
 class TieringMapper {
 
+    /**
+     * @param {nb.Tiering} tiering
+     */
     constructor(tiering) {
         this.tier_mappers = tiering.tiers
             .filter(t => !t.disabled)
@@ -370,6 +410,10 @@ class TieringMapper {
             .map(t => new TierMapper(t));
     }
 
+    /**
+     * @param {nb.TieringStatus} tiering_status
+     * @param {nb.LocationInfo} location_info
+     */
     update_status(tiering_status, location_info) {
         const { tier_mappers } = this;
 
@@ -383,11 +427,13 @@ class TieringMapper {
     /**
      * Map a chunk based on the entire tiering policy
      * Works by picking the tier we want best for the chunk to be stored in,
+     * @param {Chunk} chunk
+     * @param {nb.Tier} tier
      * @returns {Object} tier_mapping with mapping info for the chunk (allocations, deletions, ...)
      */
-    map_tiering(chunk_mapper, tier) {
+    map_tiering(chunk, tier) {
         const tier_mapper = _.find(this.tier_mappers, mapper => _.isEqual(mapper.tier._id, tier._id));
-        return tier_mapper.map_tier(chunk_mapper);
+        return tier_mapper.map_tier(chunk);
     }
 
     select_tier_for_write(start_tier_order) {
@@ -446,7 +492,7 @@ function _get_cached_tiering_mapper(tiering) {
  * map_chunk() the main mapper functionality
  * decide how to map a given chunk, either new, or existing
  *
- * @param {nb.Chunk} chunk The data chunk, with chunk.blocks populated
+ * @param {Chunk} chunk The data chunk, with chunk.blocks populated
  * @param {nb.Tiering} tiering The bucket tiering
  * @param {nb.TieringStatus} tiering_status See node_allocator.get_tiering_status()
  * @returns {Object} mapping
@@ -457,13 +503,12 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
     const tiering_mapper = _get_cached_tiering_mapper(tiering);
     tiering_mapper.update_status(tiering_status, location_info);
 
-    const chunk_mapper = new ChunkMapper(chunk);
-    const mapping = tiering_mapper.map_tiering(chunk_mapper, tier);
+    const mapping = tiering_mapper.map_tiering(chunk, tier);
 
     if (dbg.should_log(2)) {
         if (dbg.should_log(3)) {
             dbg.log1('map_chunk: tiering_mapper', util.inspect(tiering_mapper, true, null, true));
-            dbg.log1('map_chunk: chunk_mapper', util.inspect(chunk_mapper, true, null, true));
+            dbg.log1('map_chunk: chunk', util.inspect(chunk, true, null, true));
         }
         dbg.log1('map_chunk: mapping', util.inspect(mapping, true, null, true));
     }
