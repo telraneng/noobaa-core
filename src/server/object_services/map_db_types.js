@@ -7,7 +7,7 @@ const _ = require('lodash');
 const util = require('util');
 
 const system_store = require('../system_services/system_store').get_instance();
-// const { make_object_id } = require('../../util/mongo_utils');
+const { make_object_id } = require('../../util/mongo_utils');
 
 
 /** @type {nb.ID} */
@@ -34,9 +34,9 @@ class ChunkDB {
         this.data = undefined_buffer;
         this.had_errors = false;
         this.dup_chunk_id = undefined_id;
-        this.is_accessible = true;
-        this.is_building_blocks = true;
-        this.is_building_frags = true;
+        this.is_accessible = false;
+        this.is_building_blocks = false;
+        this.is_building_frags = false;
         ChunkDB.implements_interface(this);
     }
 
@@ -60,11 +60,36 @@ class ChunkDB {
         return this.__frag_by_index;
     }
 
+    /** @returns {nb.Bucket} */
     get bucket() { return system_store.data.get_by_id(this.chunk_db.bucket); }
+    /** @returns {nb.Tier} */
     get tier() { return system_store.data.get_by_id(this.chunk_db.tier); }
+    /** @returns {nb.ChunkConfig} */
     get chunk_config() { return system_store.data.get_by_id(this.chunk_db.chunk_config); }
+
     // get parts() { return /** @type {nb.Part[]} */ (undefined); }
     // get objects() { return /** @type {nb.ObjectMD[]} */ (undefined); }
+
+    /**
+     * @param {nb.Frag} frag 
+     * @param {nb.Pool[]} pools 
+     */
+    add_block_allocation(frag, pools) {
+        const block = new_block_db({
+            _id: make_object_id(),
+            system: this.bucket.system._id,
+            bucket: this.bucket_id,
+            chunk: this._id,
+            frag: frag._id,
+            size: this.frag_size,
+            node: undefined,
+            pool: undefined,
+        });
+        block.allocation_pools = pools;
+        frag.blocks.push(block);
+        frag.is_building_blocks = true;
+        this.is_building_blocks = true;
+    }
 
     /**
      * @returns {nb.ChunkInfo}
@@ -116,6 +141,8 @@ class FragDB {
     constructor(frag_db) {
         this.frag_db = frag_db;
         this.data = undefined_buffer;
+        this.is_accessible = false;
+        this.is_building_blocks = false;
         FragDB.implements_interface(this);
     }
 
@@ -134,9 +161,6 @@ class FragDB {
         if (!this.__blocks) this.__blocks = this.frag_db.blocks.map(new_block_db);
         return this.__blocks;
     }
-
-    get is_accessible() { return false; }
-    get is_building_blocks() { return false; }
 
     /**
      * @returns {nb.FragInfo}
@@ -176,11 +200,13 @@ class BlockDB {
      */
     constructor(block_db) {
         this.block_db = block_db;
-        this.is_preallocated = false;
         this.is_accessible = false;
+        this.is_preallocated = false;
         this.is_allocation = false;
         this.is_deletion = false;
         this.is_future_deletion = false;
+        /** @type {nb.Pool[]} */
+        this.allocation_pools = undefined;
         // this.is_misplaced = false;
         // this.is_missing = false;
         // this.is_tampered = false;
@@ -268,10 +294,16 @@ class BlockDB {
     }
 }
 
+/**
+ * @param {nb.FragSchemaDB} frag_db 
+ */
 function new_frag_db(frag_db) {
     return new FragDB(frag_db);
 }
 
+/**
+ * @param {nb.BlockSchemaDB} block_db 
+ */
 function new_block_db(block_db) {
     return new BlockDB(block_db);
 }

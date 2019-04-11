@@ -10,8 +10,20 @@ const dbg = require('../util/debug_module')(__filename);
 const config = require('../../config');
 const nb_native = require('../util/nb_native');
 const block_store_client = require('../agent/block_store_services/block_store_client').instance();
+const Semaphore = require('../util/semaphore');
+const KeysSemaphore = require('../util/keys_semaphore');
 const { ChunkAPI } = require('./map_api_types');
 const { RpcError, RPC_BUFFERS } = require('../rpc');
+
+// semphores global to the client
+const block_write_sem_global = new Semaphore(config.IO_WRITE_CONCURRENCY_GLOBAL);
+const block_replicate_sem_global = new Semaphore(config.IO_REPLICATE_CONCURRENCY_GLOBAL);
+// const block_read_sem_global = new Semaphore(config.IO_READ_CONCURRENCY_GLOBAL);
+
+// semphores specific to an agent
+const block_write_sem_agent = new KeysSemaphore(config.IO_WRITE_CONCURRENCY_AGENT);
+const block_replicate_sem_agent = new KeysSemaphore(config.IO_REPLICATE_CONCURRENCY_AGENT);
+// const block_read_sem_agent = new KeysSemaphore(config.IO_READ_CONCURRENCY_AGENT);
 
 /**
  * @param {nb.Chunk[]} res_chunks
@@ -41,12 +53,6 @@ class MapClient {
      * @param {string} [props.desc]
      * @param {function} props.read_frags
      * @param {function} props.report_error
-     * @param {nb.Semaphore} props.block_write_sem_global
-     * @param {nb.Semaphore} props.block_replicate_sem_global
-     * @param {nb.Semaphore} props.block_read_sem_global
-     * @param {nb.KeysSemaphore} props.block_write_sem_agent
-     * @param {nb.KeysSemaphore} props.block_replicate_sem_agent
-     * @param {nb.KeysSemaphore} props.block_read_sem_agent
      */
     constructor(props) {
         this.chunks = props.chunks;
@@ -57,12 +63,6 @@ class MapClient {
         this.desc = props.desc;
         this.read_frags = props.read_frags;
         this.report_error = props.report_error;
-        this.block_write_sem_global = props.block_write_sem_global;
-        this.block_replicate_sem_global = props.block_replicate_sem_global;
-        this.block_read_sem_global = props.block_read_sem_global;
-        this.block_write_sem_agent = props.block_write_sem_agent;
-        this.block_replicate_sem_agent = props.block_replicate_sem_agent;
-        this.block_read_sem_agent = props.block_read_sem_agent;
         this.had_errors = false;
         Object.seal(this);
     }
@@ -183,28 +183,34 @@ class MapClient {
     async process_frag(chunk, frag) {
         const alloc_blocks = frag.blocks.filter(block => block.is_allocation);
         if (!alloc_blocks.length) return;
-        const accessible_blocks = frag.blocks.filter(block => block.is_accessible);
-        if (frag.data) { // upload case / fragment rebuild case (read_entire_chunk)
+
+        // upload case / fragment rebuild case (read_entire_chunk)
+        if (frag.data) {
             const first_alloc = alloc_blocks[0];
             const rest_allocs = alloc_blocks.slice(1);
             await this.retry_write_block(first_alloc, frag.data);
             await P.map(rest_allocs, alloc => this.retry_replicate_blocks(alloc, first_alloc));
-        } else if (accessible_blocks && accessible_blocks.length) {
+            return;
+        }
+
+        const accessible_blocks = frag.blocks.filter(block => block.is_accessible);
+        if (accessible_blocks && accessible_blocks.length) {
             let next_source = Math.floor(Math.random() * accessible_blocks.length);
             await P.map(alloc_blocks, async block => {
                 const source_block = accessible_blocks[next_source];
                 next_source = (next_source + 1) % accessible_blocks.length;
                 return this.retry_replicate_blocks(block, source_block);
             });
-        } else {
-            // we already know that this chunk cannot be read here
-            // because we already handled missing frags 
-            // and now we still have a frag without data source.
-            // so we mark the chunk.had_errors to break from the process_frag loop.
-            chunk.had_errors = true;
-            this.had_errors = true;
-            throw new Error(`No data source for frag ${frag._id}`);
+            return;
         }
+
+        // we already know that this chunk cannot be read here
+        // because we already handled missing frags 
+        // and now we still have a frag without data source.
+        // so we mark the chunk.had_errors to break from the process_frag loop.
+        chunk.had_errors = true;
+        this.had_errors = true;
+        throw new Error(`No data source for frag ${frag._id}`);
     }
 
     /**
@@ -260,8 +266,8 @@ class MapClient {
      * @param {Buffer} buffer
      */
     async write_block(block, buffer) {
-        await this.block_write_sem_agent.surround_key(String(block.node_id), async () =>
-            this.block_write_sem_global.surround(async () => {
+        await block_write_sem_agent.surround_key(String(block.node_id), async () =>
+            block_write_sem_global.surround(async () => {
                 dbg.log1('UPLOAD:', this.desc, 'write block',
                     'buffer', buffer.length,
                     'to', block._id, 'node', block.node_id, block.address);
@@ -285,8 +291,8 @@ class MapClient {
      * @param {nb.Block} source_block
      */
     async replicate_block(block, source_block) {
-        await this.block_replicate_sem_agent.surround_key(String(block.node_id), async () =>
-            this.block_replicate_sem_global.surround(async () => {
+        await block_replicate_sem_agent.surround_key(String(block.node_id), async () =>
+            block_replicate_sem_global.surround(async () => {
                 dbg.log1('UPLOAD:', this.desc, 'replicate block',
                     'from', source_block._id, 'node', source_block.node_id, source_block.address,
                     'to', block._id, 'node', block.node_id, block.address);

@@ -163,8 +163,26 @@ class GetMapping {
             (_.flatMapDeep(chunks, chunk => chunk.frags.map(frag => frag.blocks)))
         );
         await nodes_client.instance().populate_nodes_for_map(chunks[0].bucket.system, blocks, 'node_id', 'node');
-        const orphan_blocks = _.remove(blocks, block => !block.node || !block.node._id);
-        if (orphan_blocks.length) console.log('ORPHAN BLOCKS (ignoring)', orphan_blocks);
+        for (const chunk of chunks) {
+            chunk.is_accessible = false;
+            let num_accessible_frags = 0;
+            for (const frag of chunk.frags) {
+                frag.is_accessible = false;
+                for (const block of frag.blocks) {
+                    if (!block.node || !block.node._id) {
+                        dbg.warn('ORPHAN BLOCK (ignoring)', block);
+                    }
+                    block.is_accessible = block.node && block.node.readable;
+                    if (block.is_accessible && !frag.is_accessible) {
+                        frag.is_accessible = true;
+                        num_accessible_frags += 1;
+                    }
+                }
+            }
+            if (num_accessible_frags >= chunk.chunk_coder_config.data_frags) {
+                chunk.is_accessible = true;
+            }
+        }
     }
 
     /**
@@ -192,18 +210,18 @@ class GetMapping {
         for (const frag of chunk.frags) {
             for (const block of frag.blocks) {
                 if (!block.is_allocation) continue;
-                // const { frag, pools, /* sources */ } = alloc;
-                const node = node_allocator.allocate_node(pools, avoid_nodes, allocated_hosts);
+                const node = node_allocator.allocate_node(block.allocation_pools, avoid_nodes, allocated_hosts);
                 if (!node) {
                     dbg.warn(`GetMapping allocate_blocks: no nodes for allocation ` +
                         `avoid_nodes ${avoid_nodes.join(',')} ` +
-                        `pools ${pools.join(',')} `
+                        `allocation_pools ${block.allocation_pools.join(',')} `
                     );
-                    // chunk.frags = saved_frags;
                     return false;
                 }
                 block.node_id = node._id;
                 block.pool_id = node.pool._id;
+                block.node = node;
+                block.pool = node.pool;
                 if (node.node_type === 'BLOCK_STORE_FS') {
                     avoid_nodes.push(String(node._id));
                     allocated_hosts.push(node.host_id);
@@ -298,7 +316,6 @@ class PutMapping {
 
     add_chunks() {
         for (const chunk of this.chunks) {
-            // populate_chunk(chunk);
             if (chunk.dup_chunk_id) { // duplicated chunk
                 this.add_new_parts(chunk.parts, chunk, chunk.dup_chunk_id);
             } else if (chunk._id) {
@@ -524,4 +541,3 @@ exports.GetMapping = GetMapping;
 exports.PutMapping = PutMapping;
 exports.select_tier_for_write = select_tier_for_write;
 exports.make_room_in_tier = make_room_in_tier;
-// exports.populate_chunk = populate_chunk;

@@ -59,6 +59,7 @@ interface NodeAPI extends Base {
     is_cloud_node: boolean;
     is_mongo_node: boolean;
     host_id: string;
+    heartbeat: number;
     os_info: {
         hostname: string,
     },
@@ -217,9 +218,9 @@ interface ObjectMultipart {
 }
 
 interface LocationInfo {
-    node_id?: ID;
-    host_id?: ID;
-    pool_id?: ID;
+    node_id?: string;
+    host_id?: string;
+    pool_id?: string;
     region?: Region;
 }
 
@@ -259,6 +260,8 @@ interface Chunk {
     is_accessible: boolean;
     is_building_blocks: boolean;
     is_building_frags: boolean;
+
+    add_block_allocation(frag: Frag, pools: Pool[]);
 
     to_api(): ChunkInfo;
     to_db(): ChunkSchemaDB;
@@ -301,8 +304,10 @@ interface Block {
     // frag: Frag;
     // chunk: Chunk;
 
-    is_preallocated: boolean;
     is_accessible: boolean;
+    
+    is_preallocated: boolean;
+    allocation_pools?: Pool[];
     is_allocation: boolean;
     is_deletion: boolean;
     is_future_deletion: boolean;

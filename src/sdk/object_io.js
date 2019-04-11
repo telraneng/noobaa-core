@@ -94,22 +94,22 @@ class ObjectIO {
     constructor(location_info) {
         this._last_io_bottleneck_report = 0;
         this.location_info = location_info;
-        // global semaphores shared by all agents
-        this._block_write_sem_global = new Semaphore(config.IO_WRITE_CONCURRENCY_GLOBAL);
-        this._block_replicate_sem_global = new Semaphore(config.IO_REPLICATE_CONCURRENCY_GLOBAL);
+
         this._block_read_sem_global = new Semaphore(config.IO_READ_CONCURRENCY_GLOBAL);
-        // semphores specific to an agent
-        this._block_write_sem_agent = new KeysSemaphore(config.IO_WRITE_CONCURRENCY_AGENT);
-        this._block_replicate_sem_agent = new KeysSemaphore(config.IO_REPLICATE_CONCURRENCY_AGENT);
         this._block_read_sem_agent = new KeysSemaphore(config.IO_READ_CONCURRENCY_AGENT);
-        dbg.log0(`ObjectIO Configurations:: location_info:${util.inspect(location_info)},
-            totalmem:${os.totalmem()}, ENDPOINT_FORKS_COUNT:${config.ENDPOINT_FORKS_COUNT},
-            IO_SEMAPHORE_CAP:${config.IO_SEMAPHORE_CAP}`);
         this._io_buffers_sem = new Semaphore(config.IO_SEMAPHORE_CAP, {
             timeout: config.IO_STREAM_SEMAPHORE_TIMEOUT,
             timeout_error_code: 'OBJECT_IO_STREAM_ITEM_TIMEOUT'
         });
         this._init_read_cache();
+
+        dbg.log0('ObjectIO Configurations:', util.inspect({
+            location_info,
+            totalmem: os.totalmem(),
+            ENDPOINT_FORKS_COUNT: config.ENDPOINT_FORKS_COUNT,
+            IO_SEMAPHORE_CAP: config.IO_SEMAPHORE_CAP
+        }));
+
     }
 
     set_verification_mode() {
@@ -433,12 +433,6 @@ class ObjectIO {
                 desc: params.desc,
                 read_frags: (part, frags) => this._read_frags(params, part, frags),
                 report_error: (block_md, action, err) => this._report_error_on_object_upload(params, block_md, action, err),
-                block_write_sem_global: this._block_write_sem_global,
-                block_replicate_sem_global: this._block_replicate_sem_global,
-                block_read_sem_global: this._block_read_sem_global,
-                block_write_sem_agent: this._block_write_sem_agent,
-                block_replicate_sem_agent: this._block_replicate_sem_agent,
-                block_read_sem_agent: this._block_read_sem_agent,
             });
             await mc.run();
             if (mc.had_errors) throw new Error('Upload map errors');

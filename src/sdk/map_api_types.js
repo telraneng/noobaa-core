@@ -8,6 +8,10 @@ const util = require('util');
 
 const { make_object_id } = require('../util/mongo_utils');
 
+/**
+ * @typedef {import('../server/system_services/system_store').SystemStore} SystemStore
+ */
+
 /** @type {nb.ID} */
 const undefined_id = undefined;
 
@@ -24,7 +28,7 @@ class ChunkAPI {
 
     /**
      * @param {nb.ChunkInfo} chunk_info
-     * @param {import('../server/system_services/system_store').SystemStore} [system_store]
+     * @param {SystemStore} [system_store]
      */
     constructor(chunk_info, system_store) {
         this.chunk_info = chunk_info;
@@ -75,6 +79,24 @@ class ChunkAPI {
     get is_building_frags() { return this.chunk_info.is_building_frags; }
 
     /**
+     * @param {nb.Frag} frag
+     * @param {nb.Pool[]} pools 
+     */
+    add_block_allocation(frag, pools) {
+        const block = new_block_api({
+            is_allocation: true,
+            block_md: {
+                id: make_object_id().toHexString(),
+                size: this.frag_size,
+            },
+        }, this.system_store);
+        block.allocation_pools = pools;
+        frag.blocks.push(block);
+        frag.is_building_blocks = true;
+        this.chunk_info.is_building_blocks = true;
+    }
+
+    /**
      * @returns {nb.ChunkInfo}
      */
     to_api() {
@@ -123,11 +145,13 @@ class FragAPI {
 
     /**
      * @param {nb.FragInfo} frag_info 
-     * @param {import('../server/system_services/system_store').SystemStore} [system_store]
+     * @param {SystemStore} [system_store]
      */
     constructor(frag_info, system_store) {
         this.frag_info = frag_info;
         this.system_store = system_store;
+        this.is_accessible = false;
+        this.is_building_blocks = false;
         FragAPI.implements_interface(this);
     }
 
@@ -153,9 +177,6 @@ class FragAPI {
 
     set data(buf) { this.frag_info.data = buf; }
     get data() { return this.frag_info.data; }
-
-    get is_accessible() { return false; }
-    get is_building_blocks() { return false; }
 
     /**
      * @returns {nb.FragInfo}
@@ -191,7 +212,7 @@ class BlockAPI {
 
     /**
      * @param {nb.BlockInfo} block_info
-     * @param {import('../server/system_services/system_store').SystemStore} [system_store]
+     * @param {SystemStore} [system_store]
      */
     constructor(block_info, system_store) {
         this.block_info = block_info;
@@ -199,6 +220,8 @@ class BlockAPI {
         /** @type {nb.NodeAPI} */
         this.node = undefined;
         this.system_store = system_store;
+        /** @type {nb.Pool[]} */
+        this.allocation_pools = undefined;
         BlockAPI.implements_interface(this);
     }
 
@@ -222,10 +245,15 @@ class BlockAPI {
     // get chunk() { return undefined_chunk; }
 
     get is_preallocated() { return Boolean(this.block_md.is_preallocated); }
-    get is_accessible() { return this.block_info.is_accessible; }
-    get is_allocation() { return this.block_info.is_allocation; }
-    get is_deletion() { return this.block_info.is_deletion; }
-    get is_future_deletion() { return this.block_info.is_future_deletion; }
+    set is_preallocated(val) { this.block_md.is_preallocated = Boolean(val); }
+    get is_accessible() { return Boolean(this.block_info.is_accessible); }
+    set is_accessible(val) { this.block_info.is_accessible = Boolean(val); }
+    get is_allocation() { return Boolean(this.block_info.is_allocation); }
+    set is_allocation(val) { this.block_info.is_allocation = Boolean(val); }
+    get is_deletion() { return Boolean(this.block_info.is_deletion); }
+    set is_deletion(val) { this.block_info.is_deletion = Boolean(val); }
+    get is_future_deletion() { return Boolean(this.block_info.is_future_deletion); }
+    set is_future_deletion(val) { this.block_info.is_future_deletion = Boolean(val); }
 
     // get is_misplaced() { return false; }
     // get is_missing() { return false; }
@@ -257,10 +285,18 @@ class BlockAPI {
     }
 }
 
+/**
+ * @param {nb.FragInfo} frag_info 
+ * @param {SystemStore} [system_store]
+ */
 function new_frag_api(frag_info, system_store) {
     return new FragAPI(frag_info, system_store);
 }
 
+/**
+ * @param {nb.BlockInfo} block_info 
+ * @param {SystemStore} [system_store]
+ */
 function new_block_api(block_info, system_store) {
     return new BlockAPI(block_info, system_store);
 }
