@@ -58,7 +58,7 @@ class GetMapping {
         this.check_dups = props.check_dups;
         this.location_info = props.location_info;
 
-        this.chunks_per_bucket = _.groupBy(this.chunks, 'bucket_id');
+        this.chunks_per_bucket = _.groupBy(this.chunks, chunk => chunk.bucket_id);
         // assert move_to_tier is only used for chunks on the same bucket
         if (this.move_to_tier) assert.strictEqual(Object.keys(this.chunks_per_bucket).length, 1);
         Object.seal(this);
@@ -201,11 +201,14 @@ class GetMapping {
      * @param {nb.Chunk} chunk
      */
     async allocate_chunk(chunk) {
-        const avoid_blocks = _.flatMap(chunk.frags, frag => frag.blocks.filter(block => block.node.node_type === 'BLOCK_STORE_FS'));
+        const avoid_blocks = _.flatMap(chunk.frags, frag => frag.blocks.filter(block =>
+            !block.is_allocation && block.node.node_type === 'BLOCK_STORE_FS'
+        ));
         const avoid_nodes = avoid_blocks.map(block => String(block.node._id));
         const allocated_hosts = avoid_blocks.map(block => block.node.host_id);
         const preallocate_list = [];
 
+        console.log('PIPI', chunk);
         const has_room = enough_room_in_tier(chunk.tier, chunk.bucket);
         for (const frag of chunk.frags) {
             for (const block of frag.blocks) {
@@ -218,10 +221,9 @@ class GetMapping {
                     );
                     return false;
                 }
+                const pool = chunk.tier.system.pools_by_name[node.pool];
                 block.node_id = node._id;
-                block.pool_id = node.pool._id;
-                block.node = node;
-                block.pool = node.pool;
+                block.pool_id = pool._id;
                 if (node.node_type === 'BLOCK_STORE_FS') {
                     avoid_nodes.push(String(node._id));
                     allocated_hosts.push(node.host_id);

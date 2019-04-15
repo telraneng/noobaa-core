@@ -39,6 +39,8 @@ coretest.describe_mapper_test_case({
     chunk_coder_config,
 }) => {
 
+    if (data_placement !== 'SPREAD' || num_pools !== 1 || total_blocks !== 1) return;
+
     // TODO we need to create more nodes and pools to support all MAPPER_TEST_CASES
     if (data_placement !== 'SPREAD' || num_pools !== 1 || total_blocks > 10) return;
 
@@ -61,6 +63,22 @@ coretest.describe_mapper_test_case({
         this.timeout(600000); // eslint-disable-line no-invalid-this
         const { nodes } = await rpc_client.node.list_nodes({});
         nodes_list = nodes;
+    });
+
+    mocha.it.only('test1', async function() {
+        const size = 111;
+        const data = generator.update(Buffer.alloc(size));
+        const key = `${KEY}-${key_counter}`;
+        key_counter += 1;
+        const params = {
+            client: rpc_client,
+            bucket,
+            key,
+            size,
+            content_type: 'application/octet-stream',
+            source_stream: readable_buffer(data),
+        };
+        await object_io.upload_object(params);
     });
 
     mocha.it('empty object', async function() {

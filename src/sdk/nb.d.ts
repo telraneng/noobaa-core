@@ -1,10 +1,10 @@
 export as namespace nb;
 
 import { ObjectId as MongoID, Binary as MongoBinary } from 'mongodb';
-import { SensitiveString } from '../util/schema_utils';
 
 type Semaphore = import('../util/semaphore');
 type KeysSemaphore = import('../util/keys_semaphore');
+type SensitiveString = import('../util/sensitive_string');
 
 type BigInt = number | { n: number; peta: number; };
 type Region = string;
@@ -46,16 +46,22 @@ interface Account extends Base {
     name: string;
     system: System;
     email: SensitiveString;
+    next_password_change: Date;
+    is_support?: boolean;
     allowed_buckets: {
         full_permission: boolean;
         permission_list: Bucket[];
-    }
+    },
+    access_keys: {
+        access_key: SensitiveString;
+        secret_key: SensitiveString;
+    }[];
 }
 
 interface NodeAPI extends Base {
     _id: ID;
     name: string;
-    pool: string;
+    pool: string; // name!
     node_type: NodeType;
     rpc_address: string;
     ip: string;
@@ -226,8 +232,8 @@ interface Chunk {
     cipher_auth_tag_b64: string;
     chunk_coder_config: ChunkCoderConfig;
 
-    dup_chunk_id: ID;
-    had_errors: boolean;
+    dup_chunk_id?: ID;
+    had_errors?: boolean;
     data?: Buffer;
 
     is_accessible: boolean;
@@ -403,7 +409,7 @@ interface BlockMD {
 interface PartInfo {
     obj_id: string;
     chunk_id: string;
-    multipart_id: string;
+    multipart_id?: string;
     seq: number;
     start: number;
     end: number;

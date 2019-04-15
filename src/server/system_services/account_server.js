@@ -20,10 +20,9 @@ const dbg = require('../../util/debug_module')(__filename);
 const { RpcError } = require('../../rpc');
 const Dispatcher = require('../notifications/dispatcher');
 const http_utils = require('../../util/http_utils');
-const { SensitiveString } = require('../../util/schema_utils');
+const SensitiveString = require('../../util/sensitive_string');
 const cloud_utils = require('../../util/cloud_utils');
 const auth_server = require('../common_services/auth_server');
-const mongo_utils = require('../../util/mongo_utils');
 const string_utils = require('../../util/string_utils');
 const system_store = require('../system_services/system_store').get_instance();
 const bucket_server = require('../system_services/bucket_server');
@@ -45,7 +44,17 @@ const check_connection_timeout = 15 * 1000;
  *
  */
 function create_account(req) {
-    var account = _.pick(req.rpc_params, 'name', 'email', 'has_login');
+    const account = {
+        _id: (
+            req.rpc_params.new_system_parameters ?
+            system_store.parse_system_store_id(req.rpc_params.new_system_parameters.account_id) :
+            system_store.new_system_store_id()
+        ),
+        name: req.rpc_params.name,
+        email: req.rpc_params.email,
+        has_login: req.rpc_params.has_login,
+        access_keys: undefined,
+    };
     validate_create_account_params(req);
 
     if (account.name.unwrap() === 'demo' && account.email.unwrap() === 'demo@noobaa.com') {
@@ -61,12 +70,6 @@ function create_account(req) {
     let sys_id = req.rpc_params.new_system_parameters ?
         system_store.parse_system_store_id(req.rpc_params.new_system_parameters.new_system_id) :
         req.system._id;
-
-    if (req.rpc_params.new_system_parameters) {
-        account._id = system_store.parse_system_store_id(req.rpc_params.new_system_parameters.account_id);
-    } else {
-        account._id = system_store.new_system_store_id();
-    }
 
     return P.resolve()
         .then(() => {
@@ -101,7 +104,7 @@ function create_account(req) {
                     account.allow_bucket_creation = true;
 
                 } else {
-                   account.default_pool = req.rpc_params.default_pool ?
+                    account.default_pool = req.rpc_params.default_pool ?
                         req.system.pools_by_name[req.rpc_params.default_pool]._id :
                         Object.values(req.system.pools_by_name)[0]._id; // only pool is internal
 

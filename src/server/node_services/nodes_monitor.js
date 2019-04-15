@@ -705,9 +705,7 @@ class NodesMonitor extends EventEmitter {
         }
         dbg.log0('_load_from_store ...');
         return P.resolve()
-            .then(() => NodesStore.instance().find_nodes({
-                deleted: null
-            }))
+            .then(() => NodesStore.instance().find_nodes({ deleted: null }))
             .then(nodes => {
                 if (!this._started) return;
                 this._clear();

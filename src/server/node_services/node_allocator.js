@@ -176,8 +176,10 @@ function get_tiering_status(tiering) {
     /** @type {nb.TieringStatus} */
     const tiering_status_by_tier = {};
     const tiering_id_str = tiering._id.toHexString();
+    const alloc_group = alloc_group_by_tiering[tiering_id_str];
     _.each(tiering.tiers, ({ tier }) => {
         const tier_id_str = tier._id.toHexString();
+        const mirrors_storage = alloc_group && alloc_group.mirrors_storage_by_tier_id[tier_id_str];
         let tier_pools = [];
         // Inside the Tier, pools are unique and we don't need to filter afterwards
         _.each(tier.mirrors, mirror_object => {
@@ -188,7 +190,7 @@ function get_tiering_status(tiering) {
         const required_valid_nodes = ccc ? (ccc.data_frags + ccc.parity_frags) * ccc.replicas : config.NODES_MIN_COUNT;
         tiering_status_by_tier[tier_id_str] = {
             pools: _get_tier_pools_status(tier_pools, required_valid_nodes),
-            mirrors_storage: alloc_group_by_tiering[tiering_id_str].mirrors_storage_by_tier_id[tier_id_str],
+            mirrors_storage,
         };
     });
     return tiering_status_by_tier;

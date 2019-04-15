@@ -16,11 +16,9 @@ const LRUCache = require('../util/lru_cache');
 const nb_native = require('../util/nb_native');
 const Semaphore = require('../util/semaphore');
 const size_utils = require('../util/size_utils');
-const time_utils = require('../util/time_utils');
 const ChunkCoder = require('../util/chunk_coder');
 const range_utils = require('../util/range_utils');
 const buffer_utils = require('../util/buffer_utils');
-// const promise_utils = require('../util/promise_utils');
 const ChunkSplitter = require('../util/chunk_splitter');
 const KeysSemaphore = require('../util/keys_semaphore');
 const CoalesceStream = require('../util/coalesce_stream');
@@ -32,6 +30,30 @@ const { ChunkAPI } = require('./map_api_types');
 const { RpcError, RPC_BUFFERS } = require('../rpc');
 
 // dbg.set_level(5, 'core');
+/**
+ * @typedef {Object} UploadParams
+ * @property {Object} client
+ * @property {string} obj_id
+ * @property {string} bucket
+ * @property {string} key
+ * @property {string} content_type
+ * @property {number} size
+ * @property {string} md5_b64
+ * @property {string} sha256_b64
+ * @property {Object} xattr
+ * @property {Object} md_conditions
+ * @property {Object} copy_source
+ * @property {string} [tier_id]
+ * @property {string} [bucket_id]
+ * @property {string} [multipart_id]
+ * @property {boolean} [chunked_content]
+ * @property {stream.Readable} [source_stream]
+ * @property {Object} [desc]
+ * @property {number} [start]
+ * @property {number} [seq]
+ * @property {Object} [chunk_split_config]
+ * @property {Object} [chunk_coder_config]
+ */
 
 class ObjectReadable extends stream.Readable {
 
@@ -132,22 +154,7 @@ class ObjectIO {
      *
      * upload the entire source_stream as a new object
      *
-     * @param {Object} params
-     * @param {Object} params.client
-     * @param {string} params.obj_id
-     * @param {string} params.bucket
-     * @param {string} params.key
-     * @param {string} params.content_type
-     * @param {number} params.size
-     * @param {string} params.md5_b64
-     * @param {string} params.sha256_b64
-     * @param {Object} params.xattr
-     * @param {Object} params.md_conditions
-     * @param {Object} params.copy_source
-     * @param {string} [params.tier_id]
-     * @param {string} [params.bucket_id]
-     * @param {Object} [params.chunk_split_config]
-     * @param {Object} [params.chunk_coder_config]
+     * @param {UploadParams} params
      */
     async upload_object(params) {
         const create_params = _.pick(params,
@@ -170,8 +177,8 @@ class ObjectIO {
             dbg.log0('upload_object: start upload', create_params);
             const create_reply = await params.client.object.create_object_upload(create_params);
             params.obj_id = create_reply.obj_id;
-            params.tier_id = create_reply.tier;
-            params.bucket_id = create_reply.bucket;
+            params.tier_id = create_reply.tier_id;
+            params.bucket_id = create_reply.bucket_id;
             params.chunk_split_config = create_reply.chunk_split_config;
             params.chunk_coder_config = create_reply.chunk_coder_config;
             complete_params.obj_id = create_reply.obj_id;
@@ -200,6 +207,9 @@ class ObjectIO {
         }
     }
 
+    /**
+     * @param {UploadParams} params
+     */
     async upload_multipart(params) {
         const create_params = _.pick(params,
             'obj_id',
@@ -220,9 +230,9 @@ class ObjectIO {
         try {
             dbg.log0('upload_multipart: start upload', complete_params);
             const multipart_reply = await params.client.object.create_multipart(create_params);
+            params.tier_id = multipart_reply.tier_id;
+            params.bucket_id = multipart_reply.bucket_id;
             params.multipart_id = multipart_reply.multipart_id;
-            params.tier_id = multipart_reply.tier;
-            params.bucket_id = multipart_reply.bucket;
             params.chunk_split_config = multipart_reply.chunk_split_config;
             params.chunk_coder_config = multipart_reply.chunk_coder_config;
             complete_params.multipart_id = multipart_reply.multipart_id;
@@ -240,6 +250,10 @@ class ObjectIO {
         }
     }
 
+    /**
+     * @param {UploadParams} params
+     * @param {Object} complete_params
+     */
     async _upload_copy(params, complete_params) {
         const { obj_id, bucket, key, version_id, ranges } = params.copy_source;
         if (bucket !== params.bucket || ranges) {
@@ -298,6 +312,8 @@ class ObjectIO {
      * upload the source_stream parts to object in upload mode
      * by reading large portions from the stream and call _upload_chunks()
      *
+     * @param {UploadParams} params
+     * @param {Object} complete_params
      */
     async _upload_stream(params, complete_params) {
         try {
@@ -313,6 +329,10 @@ class ObjectIO {
         }
     }
 
+    /**
+     * @param {UploadParams} params
+     * @param {Object} complete_params
+     */
     async _upload_stream_internal(params, complete_params) {
 
         params.desc = _.pick(params, 'obj_id', 'num', 'bucket', 'key');
@@ -390,7 +410,7 @@ class ObjectIO {
      * @param {Object} params
      * @param {Object} complete_params
      * @param {nb.ChunkInfo[]} chunks
-     * @param {Object} params
+     * @param {(err?: Error) => void} callback
      */
     async _upload_chunks(params, complete_params, chunks, callback) {
         try {
@@ -419,6 +439,7 @@ class ObjectIO {
                 };
                 if (params.multipart_id) part.multipart_id = params.multipart_id;
                 chunk_info.parts = [part];
+                for (const frag of chunk_info.frags) frag.blocks = [];
                 const chunk = new ChunkAPI(chunk_info);
                 params.seq += 1;
                 params.start += chunk.size;

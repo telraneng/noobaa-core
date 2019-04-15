@@ -16,6 +16,14 @@ const undefined_id = undefined;
 const undefined_buffer = undefined;
 
 /**
+ * @param {nb.ID} id
+ * @returns {string | undefined}
+ */
+function optional_id_str(id) {
+    return id === undefined ? undefined : id.toHexString();
+}
+
+/**
  * @implements {nb.Chunk}
  */
 class ChunkDB {
@@ -99,9 +107,9 @@ class ChunkDB {
      */
     to_api() {
         return {
-            _id: this._id.toHexString(),
-            bucket_id: this.bucket_id.toHexString(),
-            tier_id: this.tier_id.toHexString(),
+            _id: optional_id_str(this._id),
+            bucket_id: optional_id_str(this.bucket_id),
+            tier_id: optional_id_str(this.tier_id),
             size: this.size,
             compress_size: this.compress_size,
             frag_size: this.frag_size,
@@ -110,7 +118,7 @@ class ChunkDB {
             cipher_iv_b64: this.cipher_iv_b64,
             cipher_auth_tag_b64: this.cipher_auth_tag_b64,
             chunk_coder_config: this.chunk_coder_config,
-            dup_chunk: this.dup_chunk_id.toHexString(),
+            dup_chunk: optional_id_str(this.dup_chunk_id),
             is_accessible: this.is_accessible,
             is_building_blocks: this.is_building_blocks,
             is_building_frags: this.is_building_frags,
@@ -174,7 +182,7 @@ class FragDB {
      */
     to_api() {
         return {
-            _id: this._id.toHexString(),
+            _id: optional_id_str(this._id),
             data_index: this.data_index,
             parity_index: this.parity_index,
             lrc_index: this.lrc_index,
@@ -224,8 +232,12 @@ class BlockDB {
     }
 
     get _id() { return this.block_db._id; }
+
     get node_id() { return this.block_db.node; }
     get pool_id() { return this.block_db.pool; }
+    set node_id(val) { this.block_db.node = val; }
+    set pool_id(val) { this.block_db.pool = val; }
+
     get chunk_id() { return this.block_db.chunk; }
     get frag_id() { return this.block_db.frag; }
     get bucket_id() { return this.block_db.bucket; }
@@ -245,10 +257,10 @@ class BlockDB {
     /** @returns {nb.BlockMD} */
     to_block_md() {
         return {
-            id: this.block_db._id.toHexString(),
+            id: optional_id_str(this.block_db._id),
+            node: optional_id_str(this.block_db.node),
+            pool: optional_id_str(this.block_db.pool),
             address: this.address,
-            node: this.block_db.node.toHexString(),
-            pool: this.block_db.pool.toHexString(),
             size: this.block_db.size,
             digest_type: string,
             digest_b64: string,
@@ -265,11 +277,12 @@ class BlockDB {
         let adminfo_data;
         if (adminfo) {
             let mirror_group;
+            const pool_id_str = optional_id_str(this.pool_id);
             for (const { tier, disabled } of this.bucket.tiering.tiers) {
                 if (disabled) continue;
                 for (const mirror of tier.mirrors) {
-                    if (mirror.spread_pools.find(pool => pool._id.toHexString() === this.pool_id.toHexString())) {
-                        mirror_group = mirror._id.toHexString();
+                    if (mirror.spread_pools.find(pool => optional_id_str(pool._id) === pool_id_str)) {
+                        mirror_group = optional_id_str(mirror._id);
                     }
                 }
             }
@@ -335,9 +348,9 @@ class PartDB {
      */
     to_api() {
         return {
-            obj_id: this.obj_id.toHexString(),
-            chunk_id: this.chunk_id.toHexString(),
-            multipart_id: this.multipart_id.toHexString(),
+            obj_id: optional_id_str(this.obj_id),
+            chunk_id: optional_id_str(this.chunk_id),
+            multipart_id: optional_id_str(this.multipart_id),
             seq: this.seq,
             start: this.start,
             end: this.end,

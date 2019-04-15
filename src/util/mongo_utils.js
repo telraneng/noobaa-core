@@ -80,13 +80,7 @@ function populate(docs, doc_path, collection, fields) {
     const ids = uniq_ids(docs_list, doc_path);
     collection = collection.collection || collection;
     if (!ids.length) return docs;
-    return P.resolve(collection.find({
-            _id: {
-                $in: ids
-            }
-        }, {
-            fields: fields
-        }).toArray())
+    return P.resolve(collection.find({ _id: { $in: ids } }, { projection: fields }).toArray())
         .then(items => {
             const idmap = _.keyBy(items, '_id');
             _.each(docs_list, doc => {
@@ -146,7 +140,7 @@ function new_object_id() {
 }
 
 /**
- * @param {string} id_str 
+ * @param {string} id_str
  * @returns {nb.ID}
  */
 function parse_object_id(id_str) {

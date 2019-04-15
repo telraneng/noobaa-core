@@ -425,6 +425,8 @@ class SystemStore extends EventEmitter {
         this.initial_load();
     }
 
+    [util.inspect.custom]() { return 'SystemStore'; }
+
     initial_load() {
         mongo_client.instance().on('reconnect', () => this.load());
         P.delay(100)
