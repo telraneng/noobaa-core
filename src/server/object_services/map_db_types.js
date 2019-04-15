@@ -1,13 +1,13 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../nb.d.ts" />
+/** @typedef {typeof import('../../sdk/nb')} nb */
 
 const _ = require('lodash');
 const util = require('util');
 
 const system_store = require('../system_services/system_store').get_instance();
-const { make_object_id } = require('../../util/mongo_utils');
+const { new_object_id } = require('../../util/mongo_utils');
 
 
 /** @type {nb.ID} */
@@ -51,14 +51,6 @@ class ChunkDB {
     get cipher_iv_b64() { return to_b64(this.chunk_db.cipher_iv); }
     get cipher_auth_tag_b64() { return to_b64(this.chunk_db.cipher_auth_tag); }
     get chunk_coder_config() { return this.chunk_config.chunk_coder_config; }
-    get frags() {
-        if (!this.__frags) this.__frags = this.chunk_db.frags.map(new_frag_db);
-        return this.__frags;
-    }
-    get frag_by_index() {
-        if (!this.__frag_by_index) this.__frag_by_index = _.keyBy(this.frags, 'frag_index');
-        return this.__frag_by_index;
-    }
 
     /** @returns {nb.Bucket} */
     get bucket() { return system_store.data.get_by_id(this.chunk_db.bucket); }
@@ -67,8 +59,19 @@ class ChunkDB {
     /** @returns {nb.ChunkConfig} */
     get chunk_config() { return system_store.data.get_by_id(this.chunk_db.chunk_config); }
 
-    // get parts() { return /** @type {nb.Part[]} */ (undefined); }
-    // get objects() { return /** @type {nb.ObjectMD[]} */ (undefined); }
+
+    get frags() {
+        if (!this.__frags) this.__frags = this.chunk_db.frags.map(new_frag_db);
+        return this.__frags;
+    }
+    get frag_by_index() {
+        if (!this.__frag_by_index) this.__frag_by_index = _.keyBy(this.frags, 'frag_index');
+        return this.__frag_by_index;
+    }
+    get parts() {
+        if (!this.__parts) this.__parts = this.chunk_db.parts.map(new_part_db);
+        return this.__parts;
+    }
 
     /**
      * @param {nb.Frag} frag 
@@ -76,7 +79,7 @@ class ChunkDB {
      */
     add_block_allocation(frag, pools) {
         const block = new_block_db({
-            _id: make_object_id(),
+            _id: new_object_id(),
             system: this.bucket.system._id,
             bucket: this.bucket_id,
             chunk: this._id,
@@ -112,6 +115,7 @@ class ChunkDB {
             is_building_blocks: this.is_building_blocks,
             is_building_frags: this.is_building_frags,
             frags: this.frags.map(frag => frag.to_api()),
+            parts: this.parts.map(part => part.to_api()),
         };
     }
 
@@ -119,7 +123,10 @@ class ChunkDB {
      * @returns {nb.ChunkSchemaDB}
      */
     to_db() {
-        return this.chunk_db;
+        return {
+            ...this.chunk_db,
+            frags: this.frags.map(frag => frag.to_db()),
+        };
     }
 
 }
@@ -294,6 +301,58 @@ class BlockDB {
     }
 }
 
+
+/**
+ * @implements {nb.Frag}
+ */
+class PartDB {
+
+    /** 
+     * @param {PartDB} part
+     * @returns {nb.Part}
+     */
+    static implements_interface(part) { return part; }
+
+    /**
+     * @param {nb.PartSchemaDB} part_db 
+     */
+    constructor(part_db) {
+        this.part_db = part_db;
+        PartDB.implements_interface(this);
+    }
+
+    get _id() { return this.part_db._id; }
+    get obj_id() { return this.part_db.obj; }
+    get chunk_id() { return this.part_db.chunk; }
+    get multipart_id() { return this.part_db.multipart; }
+
+    get start() { return this.part_db.start; }
+    get end() { return this.part_db.end; }
+    get seq() { return this.part_db.seq; }
+
+    /**
+     * @returns {nb.PartInfo}
+     */
+    to_api() {
+        return {
+            obj_id: this.obj_id.toHexString(),
+            chunk_id: this.chunk_id.toHexString(),
+            multipart_id: this.multipart_id.toHexString(),
+            seq: this.seq,
+            start: this.start,
+            end: this.end,
+        };
+    }
+
+    /**
+     * @returns {nb.PartSchemaDB}
+     */
+    to_db() {
+        return this.part_db;
+    }
+}
+
+
 /**
  * @param {nb.FragSchemaDB} frag_db 
  */
@@ -306,6 +365,13 @@ function new_frag_db(frag_db) {
  */
 function new_block_db(block_db) {
     return new BlockDB(block_db);
+}
+
+/**
+ * @param {nb.PartSchemaDB} part_db 
+ */
+function new_part_db(part_db) {
+    return new PartDB(part_db);
 }
 
 /**

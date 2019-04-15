@@ -59,13 +59,13 @@ function create_account(req) {
     }
 
     let sys_id = req.rpc_params.new_system_parameters ?
-        mongo_utils.make_object_id(req.rpc_params.new_system_parameters.new_system_id) :
+        system_store.parse_system_store_id(req.rpc_params.new_system_parameters.new_system_id) :
         req.system._id;
 
     if (req.rpc_params.new_system_parameters) {
-        account._id = mongo_utils.make_object_id(req.rpc_params.new_system_parameters.account_id);
+        account._id = system_store.parse_system_store_id(req.rpc_params.new_system_parameters.account_id);
     } else {
-        account._id = system_store.generate_id();
+        account._id = system_store.new_system_store_id();
     }
 
     return P.resolve()
@@ -81,7 +81,7 @@ function create_account(req) {
         .then(() => {
             if (req.rpc_params.s3_access) {
                 if (req.rpc_params.new_system_parameters) {
-                    account.default_pool = mongo_utils.make_object_id(req.rpc_params.new_system_parameters.default_pool);
+                    account.default_pool = system_store.parse_system_store_id(req.rpc_params.new_system_parameters.default_pool);
 
                     const { full_permission, permission_list } = req.rpc_params.new_system_parameters.allowed_buckets;
                     if (full_permission) {
@@ -93,7 +93,7 @@ function create_account(req) {
                             full_permission: false,
                             permission_list: _.map(
                                 permission_list,
-                                bucket => mongo_utils.make_object_id(bucket.unwrap())
+                                bucket_name => req.system.buckets_by_name[bucket_name.unwrap()]._id
                             ),
                         };
                     }
@@ -140,7 +140,7 @@ function create_account(req) {
                 insert: {
                     accounts: [account],
                     roles: [{
-                        _id: system_store.generate_id(),
+                        _id: system_store.new_system_store_id(),
                         account: account._id,
                         system: sys_id,
                         role: 'admin',
@@ -1039,7 +1039,7 @@ function ensure_support_account() {
             return bcrypt_password(system_store.get_server_secret())
                 .then(password => {
                     let support_account = {
-                        _id: system_store.generate_id(),
+                        _id: system_store.new_system_store_id(),
                         name: new SensitiveString('Support'),
                         email: new SensitiveString('support@noobaa.com'),
                         password: new SensitiveString(password),

@@ -185,7 +185,7 @@ class NodesClient {
                     role: 'admin'
                 })
             })
-            .then(node_ids => node_ids.map(node_id => mongo_utils.make_object_id(node_id)));
+            .then(node_ids => node_ids.map(node_id => mongo_utils.parse_object_id(node_id)));
     }
 
     delete_node_by_name(system_id, node_name) {

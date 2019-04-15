@@ -1,6 +1,7 @@
 export as namespace nb;
 
 import { ObjectId as MongoID, Binary as MongoBinary } from 'mongodb';
+import { SensitiveString } from '../util/schema_utils';
 
 type Semaphore = import('../util/semaphore');
 type KeysSemaphore = import('../util/keys_semaphore');
@@ -44,6 +45,11 @@ interface Account extends Base {
     _id: ID;
     name: string;
     system: System;
+    email: SensitiveString;
+    allowed_buckets: {
+        full_permission: boolean;
+        permission_list: Bucket[];
+    }
 }
 
 interface NodeAPI extends Base {
@@ -193,30 +199,6 @@ interface ChunkCoderConfig {
     lrc_type?: ParityType;
 }
 
-interface Part {
-    _id: ID;
-    deleted?: Date;
-    obj: ObjectMD;
-    multipart?: ObjectMultipart;
-    start: number;
-    end: number;
-    seq: number;
-}
-
-interface ObjectMD {
-    _id: ID;
-    deleted?: Date;
-    bucket: Bucket;
-    system: System;
-    key: string;
-    delete_marker?: boolean;
-}
-
-interface ObjectMultipart {
-    _id: ID;
-    obj: ObjectMD;
-}
-
 interface LocationInfo {
     node_id?: string;
     host_id?: string;
@@ -226,10 +208,9 @@ interface LocationInfo {
 
 
 
-////////////
-// MAPPER //
-////////////
-
+////////////////////
+// OBJECT MAPPING //
+////////////////////
 
 
 interface Chunk {
@@ -244,22 +225,21 @@ interface Chunk {
     cipher_iv_b64: string;
     cipher_auth_tag_b64: string;
     chunk_coder_config: ChunkCoderConfig;
-    frags: Frag[];
-    frag_by_index: { [frag_index: string]: Frag };
 
-    data?: Buffer;
     dup_chunk_id: ID;
     had_errors: boolean;
-
-    bucket: Bucket;
-    tier: Tier;
-    chunk_config: ChunkConfig;
-    // parts: Part[];
-    // objects: ObjectMD[];
+    data?: Buffer;
 
     is_accessible: boolean;
     is_building_blocks: boolean;
     is_building_frags: boolean;
+
+    readonly frags: Frag[];
+    readonly frag_by_index: { [frag_index: string]: Frag };
+    readonly bucket: Bucket;
+    readonly tier: Tier;
+    readonly chunk_config: ChunkConfig;
+    readonly parts: Part[];
 
     add_block_allocation(frag: Frag, pools: Pool[]);
 
@@ -305,7 +285,7 @@ interface Block {
     // chunk: Chunk;
 
     is_accessible: boolean;
-    
+
     is_preallocated: boolean;
     allocation_pools?: Pool[];
     is_allocation: boolean;
@@ -322,6 +302,38 @@ interface Block {
     to_db(): BlockSchemaDB;
 }
 
+interface Part {
+    _id: ID;
+    deleted?: Date;
+    start: number;
+    end: number;
+    seq: number;
+    obj_id: ID;
+    multipart_id: ID;
+    chunk_id: ID;
+
+    to_api(): PartInfo;
+    to_db(): PartSchemaDB;
+}
+
+interface ObjectMD {
+    _id: ID;
+    deleted?: Date;
+    bucket: Bucket;
+    system: System;
+    key: string;
+    delete_marker?: boolean;
+    // partial
+}
+
+interface ObjectMultipart {
+    _id: ID;
+    obj: ObjectMD;
+    // partial
+}
+
+
+
 interface ChunkInfo {
     _id?: string;
     bucket_id?: string;
@@ -336,7 +348,7 @@ interface ChunkInfo {
     cipher_iv_b64?: string;
     cipher_auth_tag_b64?: string;
     frags: FragInfo[];
-    parts?: Object[];
+    parts?: PartInfo[];
     is_accessible?: boolean;
     is_building_blocks?: boolean;
     is_building_frags?: boolean;
@@ -388,6 +400,16 @@ interface BlockMD {
     is_preallocated?: boolean;
 }
 
+interface PartInfo {
+    obj_id: string;
+    chunk_id: string;
+    multipart_id: string;
+    seq: number;
+    start: number;
+    end: number;
+    chunk_offset?: number;
+}
+
 
 interface ChunkSchemaDB {
     _id: ID;
@@ -406,6 +428,8 @@ interface ChunkSchemaDB {
     cipher_iv: DBBuffer;
     cipher_auth_tag: DBBuffer;
     frags: FragSchemaDB[];
+    parts?: PartSchemaDB[]; // see MDStore.load_parts_objects_for_chunks()
+    // objects?: ObjectMDSchemaDB[]; // see MDStore.load_parts_objects_for_chunks()
 }
 
 interface FragSchemaDB {
@@ -430,3 +454,21 @@ interface BlockSchemaDB {
     deleted?: Date;
     reclaimed?: Date;
 }
+
+interface PartSchemaDB {
+    _id: ID;
+    system: ID;
+    bucket: ID;
+    chunk: ID;
+    obj: ID;
+    multipart: ID;
+
+    seq: number;
+    start: number;
+    end: number;
+    chunk_offset?: number;
+
+    deleted?: Date;
+    uncommitted?: boolean;
+}
+

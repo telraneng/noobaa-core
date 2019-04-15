@@ -404,15 +404,18 @@ class ObjectIO {
                 chunk_info.data = undefined;
                 chunk_info.tier_id = params.tier_id;
                 chunk_info.bucket_id = params.bucket_id;
+                /** @type {nb.PartInfo} */
                 const part = {
                     obj_id: params.obj_id,
-                    millistamp: time_utils.millistamp(),
-                    bucket: params.bucket,
-                    key: params.key,
+                    chunk_id: undefined,
+                    multipart_id: undefined,
                     start: params.start,
                     end: params.start + chunk_info.size,
                     seq: params.seq,
-                    desc: { ...params.desc, start: params.start },
+                    // millistamp: time_utils.millistamp(),
+                    // bucket: params.bucket,
+                    // key: params.key,
+                    // desc: { ...params.desc, start: params.start },
                 };
                 if (params.multipart_id) part.multipart_id = params.multipart_id;
                 chunk_info.parts = [part];
@@ -422,7 +425,7 @@ class ObjectIO {
                 params.range.end = params.start;
                 complete_params.size += chunk.size;
                 complete_params.num_parts += 1;
-                dbg.log0('UPLOAD: part', part.desc, chunk);
+                dbg.log0('UPLOAD: part', part.start, chunk);
                 return chunk;
             });
             const mc = new MapClient({

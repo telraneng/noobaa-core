@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../../sdk/nb.d.ts" />
+/** @typedef {typeof import('../../sdk/nb')} nb */
 
 const _ = require('lodash');
 
@@ -65,7 +65,7 @@ async function delete_blocks_from_nodes(blocks) {
     try {
         const blocks_by_node = _.values(_.groupBy(blocks, block => String(block.node._id)));
         const succeeded_block_ids = await Promise.all(blocks_by_node.map(delete_blocks_from_node));
-        const block_ids = _.flatten(succeeded_block_ids).map(block_id => mongo_utils.make_object_id(block_id));
+        const block_ids = _.flatten(succeeded_block_ids).map(block_id => mongo_utils.parse_object_id(block_id));
         // In case we have a bug which calls delete_blocks_from_nodes several times
         // We will advance the reclaimed and it will have different values
         // This is not critical like deleted which alters the md_aggregator calculations

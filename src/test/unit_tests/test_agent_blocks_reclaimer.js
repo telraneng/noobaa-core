@@ -140,7 +140,7 @@ mocha.describe('not mocked agent_blocks_reclaimer', function() {
             .then(() => upload_object(obj_key, obj_data, obj_size))
             .then(id => {
                 obj_id = id;
-                return MDStore.instance().find_parts_chunk_ids({ _id: mongo_utils.make_object_id(id) });
+                return MDStore.instance().find_parts_chunk_ids({ _id: mongo_utils.parse_object_id(id) });
             })
             .then(chunk_ids => MDStore.instance().find_blocks_of_chunks(chunk_ids))
             .then(blocks => {

@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../nb.d.ts" />
+/** @typedef {typeof import('./nb')} nb */
 
 const util = require('util');
 

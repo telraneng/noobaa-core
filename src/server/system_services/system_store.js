@@ -1,11 +1,10 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../../sdk/nb.d.ts" />
+/** @typedef {typeof import('../../sdk/nb')} nb */
 
 const _ = require('lodash');
 const util = require('util');
-const mongodb = require('mongodb');
 const EventEmitter = require('events').EventEmitter;
 const system_schema = require('./schemas/system_schema');
 const cluster_schema = require('./schemas/cluster_schema');
@@ -249,6 +248,7 @@ class SystemStoreData {
     /**
      * If id is falsy return undefined, because it should mean there is no entity to resolve.
      * Otherwise lookup the id in the map, and if not found return null to indicate the id is not found.
+     * @param {string|nb.ID} id
      */
     get_by_id(id) {
         if (!id) return undefined;
@@ -525,12 +525,12 @@ class SystemStore extends EventEmitter {
         return mongo_client.instance().validate(col.name, item, warn);
     }
 
-    generate_id() {
-        return new mongodb.ObjectId();
+    new_system_store_id() {
+        return mongo_utils.new_object_id();
     }
 
-    make_system_id(id_str) {
-        return new mongodb.ObjectId(id_str);
+    parse_system_store_id(id_str) {
+        return mongo_utils.parse_object_id(id_str);
     }
 
     has_same_id(obj1, obj2) {

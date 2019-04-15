@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../sdk/nb.d.ts" />
+/** @typedef {typeof import('../sdk/nb')} nb */
 
 const _ = require('lodash');
 const util = require('util');
@@ -105,7 +105,7 @@ function resolve_object_ids_recursive(idmap, item) {
     _.each(item, (val, key) => {
         if (val instanceof mongodb.ObjectId) {
             if (key !== '_id') {
-                const obj = idmap[val];
+                const obj = idmap[val.toHexString()];
                 if (obj) {
                     item[key] = obj;
                 }
@@ -139,18 +139,25 @@ function resolve_object_ids_paths(idmap, item, paths, allow_missing) {
 }
 
 /**
- * @param {string} [id_str] 
  * @returns {nb.ID}
  */
-function make_object_id(id_str) {
-    return new mongodb.ObjectId(id_str);
+function new_object_id() {
+    return new mongodb.ObjectId();
+}
+
+/**
+ * @param {string} id_str 
+ * @returns {nb.ID}
+ */
+function parse_object_id(id_str) {
+    return new mongodb.ObjectId(String(id_str || undefined));
 }
 
 function fix_id_type(doc) {
     if (_.isArray(doc)) {
         _.each(doc, d => fix_id_type(d));
     } else if (doc && doc._id) {
-        doc._id = make_object_id(doc._id);
+        doc._id = new mongodb.ObjectId(doc._id);
     }
     return doc;
 }
@@ -213,7 +220,8 @@ exports.uniq_ids = uniq_ids;
 exports.populate = populate;
 exports.resolve_object_ids_recursive = resolve_object_ids_recursive;
 exports.resolve_object_ids_paths = resolve_object_ids_paths;
-exports.make_object_id = make_object_id;
+exports.new_object_id = new_object_id;
+exports.parse_object_id = parse_object_id;
 exports.fix_id_type = fix_id_type;
 exports.is_object_id = is_object_id;
 exports.is_err_duplicate_key = is_err_duplicate_key;

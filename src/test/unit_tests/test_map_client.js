@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../../sdk/nb.d.ts" />
+/** @typedef {typeof import('../../sdk/nb')} nb */
 
 // setup coretest first to prepare the env
 const coretest = require('./coretest');
@@ -16,7 +16,7 @@ const mocha = require('mocha');
 // const MDStore = require('../../server/object_services/md_store').MDStore;
 const { MapClient, Chunk } = require('../../sdk/mapper/map_client');
 const system_store = require('../../server/system_services/system_store').get_instance();
-const { make_object_id } = require('../../util/mongo_utils');
+const { new_object_id } = require('../../util/mongo_utils');
 
 coretest.describe_mapper_test_case({
     name: 'map_client',
@@ -77,7 +77,7 @@ coretest.describe_mapper_test_case({
                     data_index: 1,
                     blocks: [{
                         block_md: {
-                            id: make_object_id(),
+                            id: new_object_id(),
                             node: nodes[0]._id,
                             pool: system.pools_by_name[nodes[0].pool]._id,
                         }

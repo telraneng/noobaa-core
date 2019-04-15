@@ -1,16 +1,13 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../nb.d.ts" />
+/** @typedef {typeof import('./nb')} nb */
+/** @typedef {import('../server/system_services/system_store').SystemStore} SystemStore */
 
 const _ = require('lodash');
 const util = require('util');
 
-const { make_object_id } = require('../util/mongo_utils');
-
-/**
- * @typedef {import('../server/system_services/system_store').SystemStore} SystemStore
- */
+const { new_object_id, parse_object_id } = require('../util/mongo_utils');
 
 /** @type {nb.ID} */
 const undefined_id = undefined;
@@ -37,9 +34,9 @@ class ChunkAPI {
         ChunkAPI.implements_interface(this);
     }
 
-    get _id() { return make_object_id(this.chunk_info._id); }
-    get bucket_id() { return make_object_id(this.chunk_info.bucket_id); }
-    get tier_id() { return make_object_id(this.chunk_info.tier_id); }
+    get _id() { return parse_object_id(this.chunk_info._id); }
+    get bucket_id() { return parse_object_id(this.chunk_info.bucket_id); }
+    get tier_id() { return parse_object_id(this.chunk_info.tier_id); }
     get size() { return this.chunk_info.size; }
     get compress_size() { return this.chunk_info.compress_size; }
     get frag_size() { return this.chunk_info.frag_size; }
@@ -48,6 +45,25 @@ class ChunkAPI {
     get cipher_iv_b64() { return this.chunk_info.cipher_iv_b64; }
     get cipher_auth_tag_b64() { return this.chunk_info.cipher_auth_tag_b64; }
     get chunk_coder_config() { return this.chunk_info.chunk_coder_config; }
+
+    set data(buf) { this.chunk_info.data = buf; }
+    get data() { return this.chunk_info.data; }
+    get dup_chunk_id() { return parse_object_id(this.chunk_info.dup_chunk); }
+
+    get bucket() { return this.system_store.data.get_by_id(this.chunk_info.bucket_id); }
+    get tier() { return this.system_store.data.get_by_id(this.chunk_info.tier_id); }
+    get chunk_config() {
+        return _.find(this.bucket.system.chunk_configs_by_id,
+            c => _.isEqual(c.chunk_coder_config, this.chunk_coder_config));
+    }
+
+    get is_accessible() { return this.chunk_info.is_accessible; }
+    get is_building_blocks() { return this.chunk_info.is_building_blocks; }
+    get is_building_frags() { return this.chunk_info.is_building_frags; }
+    set is_accessible(val) { this.chunk_info.is_accessible = val; }
+    set is_building_blocks(val) { this.chunk_info.is_building_blocks = val; }
+    set is_building_frags(val) { this.chunk_info.is_building_frags = val; }
+
     get frags() {
         if (!this.__frags) {
             this.__frags = this.chunk_info.frags.map(
@@ -60,23 +76,14 @@ class ChunkAPI {
         if (!this.__frag_by_index) this.__frag_by_index = _.keyBy(this.frags, 'frag_index');
         return this.__frag_by_index;
     }
-
-    set data(buf) { this.chunk_info.data = buf; }
-    get data() { return this.chunk_info.data; }
-    get dup_chunk_id() { return make_object_id(this.chunk_info.dup_chunk); }
-
-    get bucket() { return this.system_store.data.get_by_id(this.chunk_info.bucket_id); }
-    get tier() { return this.system_store.data.get_by_id(this.chunk_info.tier_id); }
-    get chunk_config() {
-        return _.find(this.bucket.system.chunk_configs_by_id,
-            c => _.isEqual(c.chunk_coder_config, this.chunk_coder_config));
+    get parts() {
+        if (!this.__parts) {
+            this.__parts = this.chunk_info.parts.map(
+                part_info => new_part_api(part_info, this.system_store)
+            );
+        }
+        return this.__parts;
     }
-    // get parts() { return /** @type {nb.Part[]} */ (undefined); }
-    // get objects() { return /** @type {nb.ObjectMD[]} */ (undefined); }
-
-    get is_accessible() { return this.chunk_info.is_accessible; }
-    get is_building_blocks() { return this.chunk_info.is_building_blocks; }
-    get is_building_frags() { return this.chunk_info.is_building_frags; }
 
     /**
      * @param {nb.Frag} frag
@@ -86,7 +93,7 @@ class ChunkAPI {
         const block = new_block_api({
             is_allocation: true,
             block_md: {
-                id: make_object_id().toHexString(),
+                id: new_object_id().toHexString(),
                 size: this.frag_size,
             },
         }, this.system_store);
@@ -100,11 +107,12 @@ class ChunkAPI {
      * @returns {nb.ChunkInfo}
      */
     to_api() {
-        if (this.chunk_info.data) {
-            return _.omit(this.chunk_info, 'data');
-        } else {
-            return this.chunk_info;
-        }
+        return {
+            ...this.chunk_info,
+            data: undefined,
+            frags: this.frags.map(frag => frag.to_api()),
+            parts: this.parts.map(part => part.to_api()),
+        };
     }
 
     /**
@@ -155,17 +163,22 @@ class FragAPI {
         FragAPI.implements_interface(this);
     }
 
-    get _id() { return make_object_id(this.frag_info._id); }
+    get _id() { return parse_object_id(this.frag_info._id); }
     get data_index() { return this.frag_info.data_index; }
     get parity_index() { return this.frag_info.parity_index; }
     get lrc_index() { return this.frag_info.lrc_index; }
     get digest_b64() { return this.frag_info.digest_b64; }
+
+    set data(buf) { this.frag_info.data = buf; }
+    get data() { return this.frag_info.data; }
+
     get frag_index() {
         if (this.frag_info.data_index >= 0) return `D${this.frag_info.data_index}`;
         if (this.frag_info.parity_index >= 0) return `P${this.frag_info.parity_index}`;
         if (this.frag_info.lrc_index >= 0) return `L${this.frag_info.lrc_index}`;
         throw new Error('BAD FRAG ' + util.inspect(this));
     }
+
     get blocks() {
         if (!this.__blocks) {
             this.__blocks = this.frag_info.blocks.map(
@@ -175,14 +188,14 @@ class FragAPI {
         return this.__blocks;
     }
 
-    set data(buf) { this.frag_info.data = buf; }
-    get data() { return this.frag_info.data; }
-
     /**
      * @returns {nb.FragInfo}
      */
     to_api() {
-        return this.frag_info;
+        return {
+            ...this.frag_info,
+            blocks: this.blocks.map(block => block.to_api()),
+        };
     }
 
     /**
@@ -225,9 +238,9 @@ class BlockAPI {
         BlockAPI.implements_interface(this);
     }
 
-    get _id() { return make_object_id(this.block_md.id); }
-    get node_id() { return make_object_id(this.block_md.node); }
-    get pool_id() { return make_object_id(this.block_md.pool); }
+    get _id() { return parse_object_id(this.block_md.id); }
+    get node_id() { return parse_object_id(this.block_md.node); }
+    get pool_id() { return parse_object_id(this.block_md.pool); }
     get chunk_id() { return undefined_id; }
     get frag_id() { return undefined_id; }
     get bucket_id() { return undefined_id; }
@@ -286,6 +299,61 @@ class BlockAPI {
 }
 
 /**
+ * @implements {nb.Part}
+ */
+class PartAPI {
+
+    /** 
+     * @param {PartAPI} part
+     * @returns {nb.Part}
+     */
+    static implements_interface(part) { return part; }
+
+    /**
+     * @param {nb.PartInfo} part_info
+     * @param {SystemStore} [system_store]
+     */
+    constructor(part_info, system_store) {
+        this.part_info = part_info;
+        this.system_store = system_store;
+        PartAPI.implements_interface(this);
+    }
+
+    get _id() { return undefined; } // { return parse_object_id(this.part_info._id); }
+    get obj_id() { return parse_object_id(this.part_info.obj_id); }
+    get chunk_id() { return parse_object_id(this.part_info.chunk_id); }
+    get multipart_id() { return parse_object_id(this.part_info.multipart_id); }
+
+    get start() { return this.part_info.start; }
+    get end() { return this.part_info.end; }
+    get seq() { return this.part_info.seq; }
+
+    /** @returns {nb.PartInfo} */
+    to_api() {
+        return this.part_info;
+    }
+
+    /** @returns {nb.PartSchemaDB} */
+    to_db() {
+        return {
+            _id: this._id,
+            chunk: this.chunk_id,
+            obj: this.obj_id,
+            multipart: this.multipart_id,
+
+            system: undefined_id,
+            bucket: undefined_id,
+
+            seq: this.seq,
+            start: this.start,
+            end: this.end,
+
+            uncommitted: true,
+        };
+    }
+}
+
+/**
  * @param {nb.FragInfo} frag_info 
  * @param {SystemStore} [system_store]
  */
@@ -299,6 +367,14 @@ function new_frag_api(frag_info, system_store) {
  */
 function new_block_api(block_info, system_store) {
     return new BlockAPI(block_info, system_store);
+}
+
+/**
+ * @param {nb.PartInfo} part_info 
+ * @param {SystemStore} [system_store]
+ */
+function new_part_api(part_info, system_store) {
+    return new PartAPI(part_info, system_store);
 }
 
 /**

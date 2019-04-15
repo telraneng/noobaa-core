@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../../sdk/nb.d.ts" />
+/** @typedef {typeof import('../../sdk/nb')} nb */
 
 const _ = require('lodash');
 const assert = require('assert');

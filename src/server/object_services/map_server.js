@@ -1,7 +1,7 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-/// <reference path="../nb.d.ts" />
+/** @typedef {typeof import('../../sdk/nb')} nb */
 
 const _ = require('lodash');
 const assert = require('assert');
@@ -290,7 +290,7 @@ class PutMapping {
         this.new_blocks = [];
         /** @type {nb.ChunkSchemaDB[]} */
         this.new_chunks = [];
-        /** @type {nb.Part[]} */
+        /** @type {nb.PartSchemaDB[]} */
         this.new_parts = [];
         /** @type {nb.Block[]} */
         this.delete_blocks = [];
@@ -369,21 +369,8 @@ class PutMapping {
             // if (upload_size < part.end) {
             //     upload_size = part.end;
             // }
-            const new_part = {
-                _id: MDStore.instance().make_md_id(),
-                system: chunk.bucket.system._id,
-                bucket: chunk.bucket_id,
-                obj: MDStore.instance().make_md_id(part.obj_id),
-                start: part.start,
-                end: part.end,
-                seq: part.seq,
-                chunk: MDStore.instance().make_md_id(chunk_id),
-                uncommitted: true,
-            };
-            if (part.multipart_id) {
-                new_part.multipart = MDStore.instance().make_md_id(part.multipart_id);
-            }
-            this.new_parts.push(new_part);
+            part.chunk_id = chunk_id;
+            this.new_parts.push(part.to_db());
         }
     }
 

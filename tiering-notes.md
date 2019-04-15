@@ -1,11 +1,15 @@
 # Tiering
 
-- chunk vs chunk_info mixup
+### Step 1
+- [x] `make_object_id()` separate to `new_object_id()` vs `parse_object_id()`
+- [ ] upload - test
+- [ ] map_reader - rewrite
+- [ ] map_builder - test
+- [ ] copy
 
-- alloc.sources / frag.accessible_blocks
+### Step 2
+- [ ] md_store add @param/@returns jsdocs to verify callers
 
-- deletions
 
-- get_part_info/get_chunk_info for read_object_mapping/read_node_mapping/read_host_mapping - decide if to reverse so that chunks refer to parts.
-
-- obj.upload_size updates during upload - preserve or remove?
+### Step 3
+- [ ] obj.upload_size updates during upload - preserve or remove?
