@@ -81,6 +81,10 @@ class ChunkDB {
         return this.__parts;
     }
 
+    set_new_chunk_id() {
+        throw new Error(`ChunkDB.set_new_chunk_id: unexpected call for existing chunk ${this._id}`);
+    }
+
     /**
      * @param {nb.Frag} frag 
      * @param {nb.Pool[]} pools 
@@ -177,6 +181,10 @@ class FragDB {
         return this.__blocks;
     }
 
+    set_new_frag_id() {
+        throw new Error(`FragDB.set_new_frag_id: unexpected call for existing frag ${this._id}`);
+    }
+
     /**
      * @returns {nb.FragInfo}
      */
@@ -232,12 +240,8 @@ class BlockDB {
     }
 
     get _id() { return this.block_db._id; }
-
     get node_id() { return this.block_db.node; }
     get pool_id() { return this.block_db.pool; }
-    set node_id(val) { this.block_db.node = val; }
-    set pool_id(val) { this.block_db.pool = val; }
-
     get chunk_id() { return this.block_db.chunk; }
     get frag_id() { return this.block_db.frag; }
     get bucket_id() { return this.block_db.bucket; }
@@ -253,6 +257,22 @@ class BlockDB {
 
     // get frag() { return undefined_frag; }
     // get chunk() { return undefined_chunk; }
+
+    /**
+     * @param {nb.NodeAPI} node
+     * @param {nb.Pool} pool
+     */
+    set_allocated_node(node, pool) {
+        throw new Error(`BlockDB.set_allocated_node: unexpected call`);
+    }
+
+    /**
+     * @param {nb.Frag} frag
+     * @param {nb.Chunk} chunk
+     */
+    set_parent_ids(frag, chunk) {
+        throw new Error(`BlockDB.set_parent_ids: unexpected call`);
+    }
 
     /** @returns {nb.BlockMD} */
     to_block_md() {
@@ -342,6 +362,11 @@ class PartDB {
     get start() { return this.part_db.start; }
     get end() { return this.part_db.end; }
     get seq() { return this.part_db.seq; }
+
+    /**
+     * @param {nb.ID} chunk_id
+     */
+    set_chunk(chunk_id) { this.part_db.chunk = chunk_id; }
 
     /**
      * @returns {nb.PartInfo}

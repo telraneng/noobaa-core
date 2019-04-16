@@ -23,6 +23,7 @@ const PeriodicReporter = require('../../util/periodic_reporter');
 const Barrier = require('../../util/barrier');
 const KeysSemaphore = require('../../util/keys_semaphore');
 const { ChunkDB } = require('./map_db_types');
+// const { new_object_id } = require('../../util/mongo_utils');
 // const { ChunkAPI } = require('../../sdk/map_api_types');
 
 const map_reporter = new PeriodicReporter('map_reporter');
@@ -222,8 +223,7 @@ class GetMapping {
                     return false;
                 }
                 const pool = chunk.tier.system.pools_by_name[node.pool];
-                block.node_id = node._id;
-                block.pool_id = pool._id;
+                block.set_allocated_node(node, pool);
                 if (node.node_type === 'BLOCK_STORE_FS') {
                     avoid_nodes.push(String(node._id));
                     allocated_hosts.push(node.host_id);
@@ -319,7 +319,7 @@ class PutMapping {
     add_chunks() {
         for (const chunk of this.chunks) {
             if (chunk.dup_chunk_id) { // duplicated chunk
-                this.add_new_parts(chunk.parts, chunk, chunk.dup_chunk_id);
+                this.add_new_parts(chunk.parts, chunk);
             } else if (chunk._id) {
                 this.add_existing_chunk(chunk);
             } else {
@@ -332,13 +332,15 @@ class PutMapping {
      * @param {nb.Chunk} chunk 
      */
     add_new_chunk(chunk) {
-        this.add_new_parts(chunk.parts, chunk, chunk._id);
+        chunk.set_new_chunk_id();
+        this.add_new_parts(chunk.parts, chunk);
         for (const frag of chunk.frags) {
+            frag.set_new_frag_id();
             for (const block of frag.blocks) {
                 assert.strictEqual(block.is_allocation, true);
                 assert.strictEqual(block.is_deletion, false);
                 assert.strictEqual(block.is_future_deletion, false);
-                this.add_new_block(block, chunk.frag_size, frag._id, chunk._id, chunk.bucket);
+                this.add_new_block(block, frag, chunk);
             }
         }
         this.new_chunks.push(chunk.to_db());
@@ -352,7 +354,7 @@ class PutMapping {
         for (const frag of chunk.frags) {
             for (const block of frag.blocks) {
                 if (block.is_allocation) {
-                    this.add_new_block(block, chunk.frag_size, frag._id, chunk._id, chunk.bucket);
+                    this.add_new_block(block, frag, chunk);
                 } else if (block.is_deletion) {
                     this.delete_blocks.push(block);
                 }
@@ -363,27 +365,27 @@ class PutMapping {
     /**
      * @param {nb.Part[]} parts
      * @param {nb.Chunk} chunk
-     * @param {nb.ID} chunk_id
      */
-    add_new_parts(parts, chunk, chunk_id) {
+    add_new_parts(parts, chunk) {
         // let upload_size = obj.upload_size || 0;
+        const chunk_id = chunk.dup_chunk_id ? chunk.dup_chunk_id : chunk._id;
         for (const part of parts) {
             // if (upload_size < part.end) {
             //     upload_size = part.end;
             // }
-            part.chunk_id = chunk_id;
+            part.set_chunk(chunk_id);
             this.new_parts.push(part.to_db());
         }
     }
 
     /**
      * @param {nb.Block} block
-     * @param {number} frag_size
-     * @param {nb.ID} frag_id
-     * @param {nb.ID} chunk_id
-     * @param {nb.Bucket} bucket
+     * @param {nb.Frag} frag
+     * @param {nb.Chunk} chunk
      */
-    add_new_block(block, frag_size, frag_id, chunk_id, bucket) {
+    add_new_block(block, frag, chunk) {
+        const bucket = chunk.bucket;
+        block.set_parent_ids(frag, chunk);
         const now = Date.now();
         const block_id_time = block._id.getTimestamp().getTime();
         if (block_id_time < now - (config.MD_GRACE_IN_MILLISECONDS - config.MD_AGGREGATOR_INTERVAL)) {

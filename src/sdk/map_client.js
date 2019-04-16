@@ -52,7 +52,7 @@ class MapClient {
      * @param {Object} props.rpc_client
      * @param {string} [props.desc]
      * @param {function} props.read_frags
-     * @param {function} props.report_error
+     * @param { (block_md: nb.BlockMD, action: 'write'|'replicate', err: Error) => Promise<void> } props.report_error
      */
     constructor(props) {
         this.chunks = props.chunks;
@@ -104,7 +104,7 @@ class MapClient {
         // TODO should we filter out chunk.had_errors from put mapping?
         await this.rpc_client.object.put_mapping({
             chunks: this.chunks.map(chunk => chunk.to_api()),
-            move_to_tier: this.move_to_tier._id,
+            move_to_tier: this.move_to_tier && this.move_to_tier._id,
         });
     }
 
@@ -227,7 +227,7 @@ class MapClient {
                 await this.write_block(block, buffer);
                 done = true;
             } catch (err) {
-                await this.report_error(block, 'write', err);
+                await this.report_error(block.to_block_md(), 'write', err);
                 if (err.rpc_code === 'NO_BLOCK_STORE_SPACE') throw err;
                 retries += 1;
                 if (retries > config.IO_WRITE_BLOCK_RETRIES) throw err;
@@ -250,7 +250,7 @@ class MapClient {
                 await this.replicate_block(block, source_block);
                 done = true;
             } catch (err) {
-                await this.report_error(block, 'replicate', err);
+                await this.report_error(block.to_block_md(), 'replicate', err);
                 if (err.rpc_code === 'NO_BLOCK_STORE_SPACE') throw err;
                 retries += 1;
                 if (retries > config.IO_REPLICATE_BLOCK_RETRIES) throw err;

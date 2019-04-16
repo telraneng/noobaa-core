@@ -96,6 +96,7 @@ function select_mirror_for_write(tier, tiering, tiering_status, location_info) {
 function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
     const tier_status = tiering_status[tier._id.toHexString()];
     const blocks_in_use = new Set();
+    const is_new_chunk = !chunk._id;
 
     const {
         replicas: tier_replicas = 1,
@@ -122,7 +123,7 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
         parity_frags = chunk_parity_frags;
     }
 
-    const mirror_for_write = chunk._id ? undefined : select_mirror_for_write(tier, tiering, tiering_status, location_info);
+    const mirror_for_write = is_new_chunk ? undefined : select_mirror_for_write(tier, tiering, tiering_status, location_info);
 
     for (let data_index = 0; data_index < data_frags; ++data_index) {
         map_frag(chunk.frag_by_index[`D${data_index}`]);
@@ -131,14 +132,16 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
         map_frag(chunk.frag_by_index[`P${parity_index}`]);
     }
 
-    const can_delete = chunk.is_accessible && !chunk.is_building_blocks;
-    for (const frag of chunk.frags) {
-        for (const block of frag.blocks) {
-            if (blocks_in_use.has(block)) continue;
-            if (can_delete) {
-                block.is_deletion = true;
-            } else {
-                block.is_future_deletion = true;
+    if (is_new_chunk) {
+        const can_delete = chunk.is_accessible && !chunk.is_building_blocks;
+        for (const frag of chunk.frags) {
+            for (const block of frag.blocks) {
+                if (block.is_allocation || blocks_in_use.has(block)) continue;
+                if (can_delete) {
+                    block.is_deletion = true;
+                } else {
+                    block.is_future_deletion = true;
+                }
             }
         }
     }
@@ -170,7 +173,7 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
      */
     function map_frag(frag) {
         const accessible_blocks = _.filter(frag.blocks, block => block.is_accessible);
-        if (chunk._id) {
+        if (is_new_chunk) {
             // if this frag is not accessible in existing chunk we
             // should attempt to rebuild from other frags
             if (!frag.is_accessible) {

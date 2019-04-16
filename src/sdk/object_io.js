@@ -419,16 +419,11 @@ class ObjectIO {
                 end: params.start,
             };
             const map_chunks = chunks.map(chunk_info => {
-                // nullify the chunk's data to release the memory buffers
-                // since we already coded it into the fragments
-                chunk_info.data = undefined;
-                chunk_info.tier_id = params.tier_id;
-                chunk_info.bucket_id = params.bucket_id;
                 /** @type {nb.PartInfo} */
                 const part = {
                     obj_id: params.obj_id,
                     chunk_id: undefined,
-                    multipart_id: undefined,
+                    multipart_id: params.multipart_id,
                     start: params.start,
                     end: params.start + chunk_info.size,
                     seq: params.seq,
@@ -437,7 +432,11 @@ class ObjectIO {
                     // key: params.key,
                     // desc: { ...params.desc, start: params.start },
                 };
-                if (params.multipart_id) part.multipart_id = params.multipart_id;
+                // nullify the chunk's data to release the memory buffers
+                // since we already coded it into the fragments
+                chunk_info.data = undefined;
+                chunk_info.tier_id = params.tier_id;
+                chunk_info.bucket_id = params.bucket_id;
                 chunk_info.parts = [part];
                 for (const frag of chunk_info.frags) frag.blocks = [];
                 const chunk = new ChunkAPI(chunk_info);

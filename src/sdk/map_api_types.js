@@ -97,6 +97,11 @@ class ChunkAPI {
         return this.__parts;
     }
 
+    set_new_chunk_id() {
+        if (this._id) throw new Error(`ChunkAPI.set_new_chunk_id: unexpected call for existing chunk ${this._id}`);
+        this.chunk_info._id = new_object_id().toHexString();
+    }
+
     /**
      * @param {nb.Frag} frag
      * @param {nb.Pool[]} pools 
@@ -107,6 +112,8 @@ class ChunkAPI {
             block_md: {
                 id: new_object_id().toHexString(),
                 size: this.frag_size,
+                digest_b64: frag.digest_b64,
+                digest_type: this.chunk_coder_config.frag_digest_type,
             },
         }, this.system_store);
         block.allocation_pools = pools;
@@ -213,6 +220,10 @@ class FragAPI {
         return this.__blocks;
     }
 
+    set_new_frag_id() {
+        this.frag_info._id = new_object_id().toHexString();
+    }
+
     /**
      * @returns {nb.FragInfo}
      */
@@ -264,19 +275,15 @@ class BlockAPI {
         this.system_store = system_store;
         /** @type {nb.Pool[]} */
         this.allocation_pools = undefined;
+        this.chunk_id = undefined_id;
+        this.frag_id = undefined_id;
+        this.bucket_id = undefined_id;
         BlockAPI.implements_interface(this);
     }
 
     get _id() { return parse_object_id(this.block_md.id); }
-
     get node_id() { return parse_optional_id(this.block_md.node); }
     get pool_id() { return parse_optional_id(this.block_md.pool); }
-    set node_id(val) { this.block_md.node = val.toHexString(); }
-    set pool_id(val) { this.block_md.pool = val.toHexString(); }
-
-    get chunk_id() { return undefined_id; }
-    get frag_id() { return undefined_id; }
-    get bucket_id() { return undefined_id; }
     get size() { return this.block_md.size; }
     get address() { return this.block_md.address; }
 
@@ -305,6 +312,27 @@ class BlockAPI {
     // get is_missing() { return false; }
     // get is_tampered() { return false; }
     // get is_local_mirror() { return false; }
+
+    /**
+     * @param {nb.NodeAPI} node
+     * @param {nb.Pool} pool
+     */
+    set_allocated_node(node, pool) {
+        this.block_md.node = node._id.toHexString();
+        this.block_md.pool = pool._id.toHexString();
+        this.block_md.node_type = node.node_type;
+        this.block_md.address = node.rpc_address;
+    }
+
+    /**
+     * @param {nb.Frag} frag
+     * @param {nb.Chunk} chunk
+     */
+    set_parent_ids(frag, chunk) {
+        this.chunk_id = chunk._id;
+        this.frag_id = frag._id;
+        this.bucket_id = chunk.bucket_id;
+    }
 
 
     to_block_md() {
@@ -360,6 +388,11 @@ class PartAPI {
     get start() { return this.part_info.start; }
     get end() { return this.part_info.end; }
     get seq() { return this.part_info.seq; }
+
+    /**
+     * @param {nb.ID} chunk_id
+     */
+    set_chunk(chunk_id) { this.part_info.chunk_id = chunk_id.toHexString(); }
 
     /** @returns {nb.PartInfo} */
     to_api() {

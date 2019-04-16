@@ -220,17 +220,17 @@ interface LocationInfo {
 
 
 interface Chunk {
-    _id: ID;
-    bucket_id: ID;
-    tier_id: ID;
-    size: number;
-    compress_size: number;
-    frag_size: number;
-    digest_b64: string;
-    cipher_key_b64: string;
-    cipher_iv_b64: string;
-    cipher_auth_tag_b64: string;
-    chunk_coder_config: ChunkCoderConfig;
+    readonly _id: ID;
+    readonly bucket_id: ID;
+    readonly tier_id: ID;
+    readonly size: number;
+    readonly compress_size: number;
+    readonly frag_size: number;
+    readonly digest_b64: string;
+    readonly cipher_key_b64: string;
+    readonly cipher_iv_b64: string;
+    readonly cipher_auth_tag_b64: string;
+    readonly chunk_coder_config: ChunkCoderConfig;
 
     dup_chunk_id?: ID;
     had_errors?: boolean;
@@ -247,6 +247,7 @@ interface Chunk {
     readonly chunk_config: ChunkConfig;
     readonly parts: Part[];
 
+    set_new_chunk_id();
     add_block_allocation(frag: Frag, pools: Pool[]);
 
     to_api(): ChunkInfo;
@@ -254,13 +255,13 @@ interface Chunk {
 }
 
 interface Frag {
-    _id: ID;
-    data_index?: number;
-    parity_index?: number;
-    lrc_index?: number;
-    frag_index: string;
-    digest_b64: string;
-    blocks: Block[];
+    readonly _id: ID;
+    readonly data_index?: number;
+    readonly parity_index?: number;
+    readonly lrc_index?: number;
+    readonly frag_index: string;
+    readonly digest_b64: string;
+    readonly blocks: Block[];
 
     data?: Buffer;
     // chunk: Chunk;
@@ -268,19 +269,21 @@ interface Frag {
     is_accessible: boolean;
     is_building_blocks: boolean;
 
+    set_new_frag_id();
+
     to_api(): FragInfo;
     to_db(): FragSchemaDB;
 }
 
 interface Block {
-    _id: ID;
-    node_id: ID;
-    pool_id: ID;
-    chunk_id: ID;
-    frag_id: ID;
-    bucket_id: ID;
-    size: number;
-    address: string;
+    readonly _id: ID;
+    readonly node_id: ID;
+    readonly pool_id: ID;
+    readonly chunk_id: ID;
+    readonly frag_id: ID;
+    readonly bucket_id: ID;
+    readonly size: number;
+    readonly address: string;
 
     node: NodeAPI;
     pool: Pool;
@@ -303,20 +306,25 @@ interface Block {
     // is_missing: boolean;
     // is_tampered: boolean;
 
+    set_allocated_node(node: NodeAPI, pool: Pool);
+    set_parent_ids(frag: Frag, chunk: Chunk);
+
     to_block_md(): BlockMD;
     to_api(adminfo?: boolean): BlockInfo;
     to_db(): BlockSchemaDB;
 }
 
 interface Part {
-    _id: ID;
-    deleted?: Date;
-    start: number;
-    end: number;
-    seq: number;
-    obj_id: ID;
-    multipart_id: ID;
-    chunk_id: ID;
+    readonly _id: ID;
+    readonly deleted?: Date;
+    readonly start: number;
+    readonly end: number;
+    readonly seq: number;
+    readonly obj_id: ID;
+    readonly multipart_id: ID;
+    readonly chunk_id: ID;
+
+    set_chunk(chunk_id: ID);
 
     to_api(): PartInfo;
     to_db(): PartSchemaDB;
