@@ -324,7 +324,9 @@ interface Part {
     readonly multipart_id: ID;
     readonly chunk_id: ID;
 
+    set_new_part_id();
     set_chunk(chunk_id: ID);
+    // set_obj_id(obj_id: ID);
 
     to_api(): PartInfo;
     to_db(): PartSchemaDB;

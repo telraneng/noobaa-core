@@ -123,7 +123,7 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
         parity_frags = chunk_parity_frags;
     }
 
-    const mirror_for_write = is_new_chunk ? undefined : select_mirror_for_write(tier, tiering, tiering_status, location_info);
+    const mirror_for_write = is_new_chunk ? select_mirror_for_write(tier, tiering, tiering_status, location_info) : undefined;
 
     for (let data_index = 0; data_index < data_frags; ++data_index) {
         map_frag(chunk.frag_by_index[`D${data_index}`]);
@@ -132,7 +132,7 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
         map_frag(chunk.frag_by_index[`P${parity_index}`]);
     }
 
-    if (is_new_chunk) {
+    if (!is_new_chunk) {
         const can_delete = chunk.is_accessible && !chunk.is_building_blocks;
         for (const frag of chunk.frags) {
             for (const block of frag.blocks) {
@@ -174,6 +174,9 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
     function map_frag(frag) {
         const accessible_blocks = _.filter(frag.blocks, block => block.is_accessible);
         if (is_new_chunk) {
+            // new chunk
+            map_frag_in_mirror(mirror_for_write);
+        } else {
             // if this frag is not accessible in existing chunk we
             // should attempt to rebuild from other frags
             if (!frag.is_accessible) {
@@ -183,9 +186,6 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
             for (const mirror of tier.mirrors) {
                 map_frag_in_mirror(mirror);
             }
-        } else {
-            // new chunk
-            map_frag_in_mirror(mirror_for_write);
         }
 
         /**

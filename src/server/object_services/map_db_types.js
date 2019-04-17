@@ -363,10 +363,19 @@ class PartDB {
     get end() { return this.part_db.end; }
     get seq() { return this.part_db.seq; }
 
+    set_new_part_id() {
+        throw new Error(`PartDB.set_new_part_id: unexpected call`);
+    }
+
     /**
      * @param {nb.ID} chunk_id
      */
     set_chunk(chunk_id) { this.part_db.chunk = chunk_id; }
+
+    /** 
+     * @param {nb.ID} obj_id
+     */
+    set_obj_id(obj_id) { this.part_db.obj = obj_id; }
 
     /**
      * @returns {nb.PartInfo}

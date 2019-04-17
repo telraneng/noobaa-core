@@ -2,7 +2,7 @@
 
 ### Step 1
 - [x] `make_object_id()` separate to `new_object_id()` vs `parse_object_id()`
-- [ ] upload - test
+- [x] upload - test
 - [ ] map_reader - rewrite
 - [ ] map_builder - test
 - [ ] copy

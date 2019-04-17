@@ -91,7 +91,7 @@ class ChunkAPI {
     get parts() {
         if (!this.__parts) {
             this.__parts = this.chunk_info.parts.map(
-                part_info => new_part_api(part_info, this.system_store)
+                part_info => new_part_api(part_info, this.bucket_id, this.system_store)
             );
         }
         return this.__parts;
@@ -372,15 +372,17 @@ class PartAPI {
 
     /**
      * @param {nb.PartInfo} part_info
+     * @param {nb.ID} bucket_id
      * @param {SystemStore} [system_store]
      */
-    constructor(part_info, system_store) {
+    constructor(part_info, bucket_id, system_store) {
         this.part_info = part_info;
         this.system_store = system_store;
+        this._id = undefined_id;
+        this.bucket_id = bucket_id;
         PartAPI.implements_interface(this);
     }
 
-    get _id() { return undefined; } // { return parse_object_id(this.part_info._id); }
     get obj_id() { return parse_object_id(this.part_info.obj_id); }
     get chunk_id() { return parse_object_id(this.part_info.chunk_id); }
     get multipart_id() { return parse_optional_id(this.part_info.multipart_id); }
@@ -389,10 +391,20 @@ class PartAPI {
     get end() { return this.part_info.end; }
     get seq() { return this.part_info.seq; }
 
+    set_new_part_id() {
+        if (this._id) throw new Error(`PartAPI.set_new_part_id: already has id ${this._id}`);
+        this._id = new_object_id();
+    }
+
     /**
      * @param {nb.ID} chunk_id
      */
     set_chunk(chunk_id) { this.part_info.chunk_id = chunk_id.toHexString(); }
+
+    /** 
+     * @param {nb.ID} obj_id
+     */
+    set_obj_id(obj_id) { this.part_info.obj_id = obj_id.toHexString(); }
 
     /** @returns {nb.PartInfo} */
     to_api() {
@@ -401,19 +413,18 @@ class PartAPI {
 
     /** @returns {nb.PartSchemaDB} */
     to_db() {
+        /** @type {nb.Bucket} */
+        const bucket = this.system_store.data.get_by_id(this.bucket_id);
         return {
             _id: this._id,
+            system: bucket.system._id,
+            bucket: bucket._id,
             chunk: this.chunk_id,
             obj: this.obj_id,
             multipart: this.multipart_id,
-
-            system: undefined_id,
-            bucket: undefined_id,
-
             seq: this.seq,
             start: this.start,
             end: this.end,
-
             uncommitted: true,
         };
     }
@@ -437,10 +448,11 @@ function new_block_api(block_info, system_store) {
 
 /**
  * @param {nb.PartInfo} part_info 
+ * @param {nb.ID} bucket_id
  * @param {SystemStore} [system_store]
  */
-function new_part_api(part_info, system_store) {
-    return new PartAPI(part_info, system_store);
+function new_part_api(part_info, bucket_id, system_store) {
+    return new PartAPI(part_info, bucket_id, system_store);
 }
 
 /**

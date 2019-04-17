@@ -460,13 +460,50 @@ module.exports = {
                         type: 'array',
                         items: { $ref: '#/definitions/chunk_info' }
                     },
-                    parts: {
-                        type: 'array',
-                        items: { $ref: '#/definitions/part_info' }
-                    },
                     location_info: { $ref: 'common_api#/definitions/location_info' },
                     move_to_tier: { objectid: true },
                 },
+            },
+            auth: {
+                system: ['admin', 'user']
+            }
+        },
+
+        copy_object_parts: {
+            method: 'PUT',
+            params: {
+                type: 'object',
+                required: [],
+                properties: {
+                    source: {
+                        type: 'object',
+                        properties: {
+                            bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                            key: { type: 'string' },
+                            obj_id: { objectid: true },
+                            version_id: { type: 'string' },
+                            start: { type: 'integer' },
+                            end: { type: 'integer' },
+                        }
+                    },
+                    target: {
+                        type: 'object',
+                        properties: {
+                            bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                            key: { type: 'string' },
+                            obj_id: { objectid: true },
+                            multipart_id: { objectid: true },
+                        }
+                    },
+                },
+            },
+            reply: {
+                type: 'object',
+                required: ['object_md', 'num_parts'],
+                properties: {
+                    object_md: { $ref: '#/definitions/object_info' },
+                    num_parts: { type: 'integer' },
+                }
             },
             auth: {
                 system: ['admin', 'user']
@@ -483,50 +520,28 @@ module.exports = {
                     'key',
                 ],
                 properties: {
-                    obj_id: {
-                        objectid: true
-                    },
+                    obj_id: { objectid: true },
                     version_id: { type: 'string' },
                     bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
-                    },
-                    start: {
-                        type: 'integer',
-                    },
-                    end: {
-                        type: 'integer',
-                    },
-                    skip: {
-                        type: 'integer',
-                    },
-                    limit: {
-                        type: 'integer',
-                    },
-                    location_info: {
-                        $ref: 'common_api#/definitions/location_info'
-                    },
-                    adminfo: {
-                        type: 'boolean',
-                    },
+                    key: { type: 'string' },
+                    start: { type: 'integer' },
+                    end: { type: 'integer' },
+                    skip: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    location_info: { $ref: 'common_api#/definitions/location_info' },
+                    adminfo: { type: 'boolean' },
                 },
             },
             reply: {
                 type: 'object',
-                required: ['object_md', 'parts'],
+                required: ['object_md', 'chunks'],
                 properties: {
-                    object_md: {
-                        $ref: '#/definitions/object_info'
-                    },
-                    parts: {
+                    object_md: { $ref: '#/definitions/object_info' },
+                    total_parts: { type: 'integer' },
+                    chunks: {
                         type: 'array',
-                        items: {
-                            $ref: '#/definitions/part_info'
-                        },
+                        items: { $ref: '#/definitions/chunk_info' },
                     },
-                    total_parts: {
-                        type: 'integer'
-                    }
                 }
             },
             auth: {
@@ -540,55 +555,35 @@ module.exports = {
                 type: 'object',
                 required: ['name'],
                 properties: {
-                    name: {
-                        type: 'string'
-                    },
-                    skip: {
-                        type: 'integer'
-                    },
-                    limit: {
-                        type: 'integer'
-                    },
-                    adminfo: {
-                        type: 'boolean'
-                    }
+                    name: { type: 'string' },
+                    skip: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    adminfo: { type: 'boolean' },
                 }
             },
             reply: {
                 type: 'object',
                 required: ['objects'],
                 properties: {
+                    total_count: { type: 'number' },
                     objects: {
                         type: 'array',
                         items: {
                             type: 'object',
                             // required: [],
                             properties: {
-                                obj_id: {
-                                    objectid: true
-                                },
-                                upload_started: {
-                                    idate: true
-                                },
-                                key: {
-                                    type: 'string'
-                                },
-                                version_id: {
-                                    type: 'string'
-                                },
+                                obj_id: { objectid: true },
+                                upload_started: { idate: true },
+                                key: { type: 'string' },
+                                version_id: { type: 'string' },
                                 bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                                parts: {
+                                chunks: {
                                     type: 'array',
-                                    items: {
-                                        $ref: '#/definitions/part_info'
-                                    }
+                                    items: { $ref: '#/definitions/chunk_info' }
                                 }
                             }
                         }
                     },
-                    total_count: {
-                        type: 'number'
-                    }
                 }
             },
             auth: {
@@ -603,55 +598,35 @@ module.exports = {
                 type: 'object',
                 required: ['name'],
                 properties: {
-                    name: {
-                        type: 'string'
-                    },
-                    skip: {
-                        type: 'integer'
-                    },
-                    limit: {
-                        type: 'integer'
-                    },
-                    adminfo: {
-                        type: 'boolean'
-                    }
+                    name: { type: 'string' },
+                    skip: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    adminfo: { type: 'boolean' },
                 }
             },
             reply: {
                 type: 'object',
                 required: ['objects'],
                 properties: {
+                    total_count: { type: 'number' },
                     objects: {
                         type: 'array',
                         items: {
                             type: 'object',
                             // required: [],
                             properties: {
-                                obj_id: {
-                                    objectid: true
-                                },
-                                upload_started: {
-                                    idate: true
-                                },
-                                key: {
-                                    type: 'string'
-                                },
-                                version_id: {
-                                    type: 'string'
-                                },
+                                obj_id: { objectid: true },
+                                upload_started: { idate: true },
+                                key: { type: 'string' },
+                                version_id: { type: 'string' },
                                 bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                                parts: {
+                                chunks: {
                                     type: 'array',
-                                    items: {
-                                        $ref: '#/definitions/part_info'
-                                    }
+                                    items: { $ref: '#/definitions/chunk_info' }
                                 }
                             }
                         }
                     },
-                    total_count: {
-                        type: 'number'
-                    }
                 }
             },
             auth: {

@@ -327,6 +327,15 @@ async function put_mapping(req) {
 
 /**
  *
+ * copy_object_parts
+ *
+ */
+async function copy_object_parts(req) {
+    BLA BLA BLA
+}
+
+/**
+ *
  * create_multipart
  *
  */
@@ -1638,6 +1647,7 @@ exports.list_multiparts = list_multiparts;
 // allocation of parts chunks and blocks
 exports.get_mapping = get_mapping;
 exports.put_mapping = put_mapping;
+exports.copy_object_parts = copy_object_parts;
 // read
 exports.read_object_mappings = read_object_mappings;
 exports.read_node_mappings = read_node_mappings;

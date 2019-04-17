@@ -373,6 +373,7 @@ class PutMapping {
             // if (upload_size < part.end) {
             //     upload_size = part.end;
             // }
+            part.set_new_part_id();
             part.set_chunk(chunk_id);
             this.new_parts.push(part.to_db());
         }
