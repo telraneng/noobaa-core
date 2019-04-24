@@ -921,6 +921,15 @@ class MDStore {
         return this._parts.col().insertMany(parts, unordered_insert_options());
     }
 
+    /**
+     * @param {Object} params
+     * @param {nb.ID} params.obj_id
+     * @param {number} params.start_gte
+     * @param {number} params.start_lt
+     * @param {number} params.end_gt
+     * @param {number} [params.skip]
+     * @param {number} [params.limit]
+     */
     find_parts_by_start_range({ obj_id, start_gte, start_lt, end_gt, skip, limit }) {
         return this._parts.col().find({
                 obj: obj_id,
@@ -1030,7 +1039,11 @@ class MDStore {
         }
     }
 
-    find_all_parts_of_object(obj) {
+    /**
+     * @param {nb.ObjectMD} obj
+     * @returns {Promise<nb.PartSchemaDB[]>}
+     */
+    async find_all_parts_of_object(obj) {
         return this._parts.col().find({ obj: obj._id, deleted: null }).toArray();
     }
 

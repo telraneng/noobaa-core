@@ -214,10 +214,11 @@ interface LocationInfo {
 
 
 
-////////////////////
-// OBJECT MAPPING //
-////////////////////
-
+/**********************************************************
+ *
+ * MAPPER - INTERFACES
+ *
+ **********************************************************/
 
 interface Chunk {
     readonly _id: ID;
@@ -323,6 +324,7 @@ interface Part {
     readonly obj_id: ID;
     readonly multipart_id: ID;
     readonly chunk_id: ID;
+    readonly chunk_offset?: number;
 
     set_new_part_id();
     set_chunk(chunk_id: ID);
@@ -338,8 +340,22 @@ interface ObjectMD {
     bucket: Bucket;
     system: System;
     key: string;
+    version_seq: number;
+    version_past: boolean;
+    version_enabled: boolean;
     delete_marker?: boolean;
-    // partial
+    size: number;
+    num_parts: number;
+    content_type: string;
+    upload_size?: number;
+    upload_started?: ID;
+    create_time?: Date;
+    etag: string;
+    md5_b64: string;
+    sha256_b64: string;
+    xattr: {};
+    stats: { reads: number; last_read: Date; };
+    tagging: { key: string; value: string; }[],
 }
 
 interface ObjectMultipart {
@@ -348,6 +364,13 @@ interface ObjectMultipart {
     // partial
 }
 
+
+
+/**********************************************************
+ *
+ * MAPPER - RPC API STRUCTURES
+ *
+ **********************************************************/
 
 
 interface ChunkInfo {
@@ -425,6 +448,13 @@ interface PartInfo {
     end: number;
     chunk_offset?: number;
 }
+
+
+/**********************************************************
+ *
+ * MAPPER - DATABASE SCHEMAS
+ *
+ **********************************************************/
 
 
 interface ChunkSchemaDB {

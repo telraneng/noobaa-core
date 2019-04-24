@@ -4,26 +4,64 @@
 /** @typedef {typeof import('./nb')} nb */
 
 const util = require('util');
+const crypto = require('crypto');
+const assert = require('assert');
 
 const P = require('../util/promise');
 const dbg = require('../util/debug_module')(__filename);
 const config = require('../../config');
 const nb_native = require('../util/nb_native');
-const block_store_client = require('../agent/block_store_services/block_store_client').instance();
+const LRUCache = require('../util/lru_cache');
 const Semaphore = require('../util/semaphore');
 const KeysSemaphore = require('../util/keys_semaphore');
+const block_store_client = require('../agent/block_store_services/block_store_client').instance();
+
 const { ChunkAPI } = require('./map_api_types');
 const { RpcError, RPC_BUFFERS } = require('../rpc');
+
+/**
+ * @typedef {'READ_CHUNK_DATA_ALWAYS'|'READ_CHUNK_DATA_BUILDING'} ReadChunkData
+ */
 
 // semphores global to the client
 const block_write_sem_global = new Semaphore(config.IO_WRITE_CONCURRENCY_GLOBAL);
 const block_replicate_sem_global = new Semaphore(config.IO_REPLICATE_CONCURRENCY_GLOBAL);
-// const block_read_sem_global = new Semaphore(config.IO_READ_CONCURRENCY_GLOBAL);
+const block_read_sem_global = new Semaphore(config.IO_READ_CONCURRENCY_GLOBAL);
 
 // semphores specific to an agent
 const block_write_sem_agent = new KeysSemaphore(config.IO_WRITE_CONCURRENCY_AGENT);
 const block_replicate_sem_agent = new KeysSemaphore(config.IO_REPLICATE_CONCURRENCY_AGENT);
-// const block_read_sem_agent = new KeysSemaphore(config.IO_READ_CONCURRENCY_AGENT);
+const block_read_sem_agent = new KeysSemaphore(config.IO_READ_CONCURRENCY_AGENT);
+
+const chunk_read_cache = new LRUCache({
+    name: 'ChunkReadCache',
+    max_usage: 256 * 1024 * 1024, // 128 MB
+
+    /**
+     * @param {Buffer} data
+     * @returns {number}
+     */
+    item_usage(data) {
+        return (data && data.length) || 1024;
+    },
+
+    /**
+     * @param {{ key: string, load_chunk: () => Promise<Buffer> }} params
+     * @returns {string}
+     */
+    make_key({ key }) {
+        return key;
+    },
+
+    /**
+     * @param {{ key: string, load_chunk: () => Promise<Buffer> }} params
+     * @returns {Promise<Buffer>}
+     */
+    async load({ load_chunk }) {
+        return load_chunk();
+    },
+});
+
 
 /**
  * @param {nb.Chunk[]} res_chunks
@@ -45,33 +83,43 @@ class MapClient {
 
     /**
      * @param {Object} props
-     * @param {nb.Chunk[]} props.chunks
+     * @param {nb.Chunk[]} [props.chunks]
+     * @param {nb.ObjectMD} [props.object_md]
+     * @param {number} [props.read_start]
+     * @param {number} [props.read_end]
      * @param {nb.LocationInfo} [props.location_info]
      * @param {nb.Tier} [props.move_to_tier]
      * @param {boolean} [props.check_dups]
      * @param {Object} props.rpc_client
      * @param {string} [props.desc]
-     * @param {function} props.read_frags
-     * @param { (block_md: nb.BlockMD, action: 'write'|'replicate', err: Error) => Promise<void> } props.report_error
+     * @param { (block_md: nb.BlockMD, action: 'write'|'replicate'|'read', err: Error) => Promise<void> } props.report_error
      */
     constructor(props) {
         this.chunks = props.chunks;
+        this.object_md = props.object_md;
+        this.read_start = props.read_start;
+        this.read_end = props.read_end;
         this.location_info = props.location_info;
         this.move_to_tier = props.move_to_tier;
         this.check_dups = Boolean(props.check_dups);
         this.rpc_client = props.rpc_client;
         this.desc = props.desc;
-        this.read_frags = props.read_frags;
         this.report_error = props.report_error;
         this.had_errors = false;
+        this.verification_mode = false;
         Object.seal(this);
     }
 
     async run() {
         const chunks = await this.get_mapping();
         this.chunks = chunks;
-        await this.process_mapping();
+        await this.process_mapping('READ_CHUNK_DATA_BUILDING');
         await this.put_mapping();
+    }
+
+    async run_object() {
+        this.chunks = await this.read_object_mapping();
+        await this.process_mapping('READ_CHUNK_DATA_ALWAYS');
     }
 
     /**
@@ -108,11 +156,28 @@ class MapClient {
         });
     }
 
-    async process_mapping() {
+    /**
+     * @returns {Promise<nb.Chunk[]>}
+     */
+    async read_object_mapping() {
+        const res = await this.rpc_client.object.read_object_mappings({
+            obj_id: this.object_md._id,
+            start: this.read_start,
+            end: this.read_end,
+            location_info: this.location_info,
+        });
+        return res.chunks.map(chunk_info => new ChunkAPI(chunk_info));
+    }
+
+    /**
+     * @param {ReadChunkData} read_chunk_data
+     * @returns {Promise<void>}
+     */
+    async process_mapping(read_chunk_data) {
         /** @type {nb.Chunk[]} */
         const chunks = await P.map(this.chunks, async chunk => {
             try {
-                return await this.process_chunk(chunk);
+                return await this.process_chunk(chunk, read_chunk_data);
             } catch (err) {
                 chunk.had_errors = true;
                 this.had_errors = true;
@@ -128,15 +193,19 @@ class MapClient {
 
     /**
      * @param {nb.Chunk} chunk 
+     * @param {ReadChunkData} read_chunk_data
      * @returns {Promise<nb.Chunk>}
      */
-    async process_chunk(chunk) {
-        dbg.log0('MapClient.process_chunk: allocations needed for chunk', chunk);
+    async process_chunk(chunk, read_chunk_data) {
+        dbg.log0('MapClient.process_chunk:', chunk);
 
         if (chunk.dup_chunk_id) return chunk;
 
-        if (chunk.is_building_frags) {
-            await this.read_entire_chunk(chunk);
+        if (read_chunk_data === 'READ_CHUNK_DATA_ALWAYS') {
+            await this.read_chunk(chunk);
+        } else if (chunk.is_building_frags) {
+            await this.read_chunk(chunk);
+            await this.encode_chunk(chunk);
         }
 
         const call_process_frag = frag => this.process_frag(chunk, frag);
@@ -163,28 +232,13 @@ class MapClient {
 
     /**
      * @param {nb.Chunk} chunk 
-     */
-    async read_entire_chunk(chunk) {
-        const part = { ...chunk.parts[0], desc: { chunk: chunk._id } };
-
-        dbg.log0('MapClient.read_entire_chunk: chunk before reading', chunk);
-        await this.read_frags(part, chunk.frags);
-
-        dbg.log0('MapClient.read_entire_chunk: chunk before encoding', chunk);
-        chunk.coder = 'enc';
-        await P.fromCallback(cb => nb_native().chunk_coder(chunk, cb));
-        dbg.log0('MapClient.read_entire_chunk: final chunk', chunk);
-    }
-
-    /**
-     * @param {nb.Chunk} chunk 
      * @param {nb.Frag} frag 
      */
     async process_frag(chunk, frag) {
         const alloc_blocks = frag.blocks.filter(block => block.is_allocation);
         if (!alloc_blocks.length) return;
 
-        // upload case / fragment rebuild case (read_entire_chunk)
+        // upload case / fragment rebuild case
         if (frag.data) {
             const first_alloc = alloc_blocks[0];
             const rest_allocs = alloc_blocks.slice(1);
@@ -280,6 +334,7 @@ class MapClient {
                 }, {
                     address: block.address,
                     timeout: config.IO_WRITE_BLOCK_TIMEOUT,
+                    auth_token: null // ignore the client options when talking to agents
                 });
             }));
     }
@@ -309,10 +364,162 @@ class MapClient {
             }));
     }
 
+    /**
+     * @param {nb.Chunk} chunk
+     */
+    async read_chunk(chunk) {
+        if (this.verification_mode) {
+            await this.read_chunk_data(chunk);
+        } else {
+            const cached_data = await chunk_read_cache.get_with_cache({
+                key: chunk._id.toHexString(),
+                load_chunk: async () => {
+                    await this.read_chunk_data(chunk);
+                    return chunk.data;
+                },
+            });
+            if (!chunk.data) chunk.data = cached_data;
+        }
+    }
+
+    async read_chunk_data(chunk) {
+        const all_frags = chunk.frags;
+        const data_frags = all_frags.filter(frag => frag.data_index >= 0);
+
+        // start by reading from the data fragments of the chunk
+        // because this is most effective and does not require decoding
+        await Promise.all(data_frags.map(frag => this.read_frag(frag, chunk)));
+        try {
+            await this.decode_chunk(chunk);
+        } catch (err) {
+            // verification mode will error if data fragments cannot be decoded
+            if (this.verification_mode) throw err;
+            if (data_frags.length === all_frags.length) throw err;
+            dbg.warn('READ _read_part: failed to read data frags, trying all frags',
+                err.stack || err,
+                'err.chunks', util.inspect(err.chunks, true, null, true)
+            );
+
+            await Promise.all(all_frags.map(frag => this.read_frag(frag, chunk)));
+            await this.decode_chunk(chunk);
+        }
+
+        // verification mode will also read the parity frags and decode it
+        // by adding the minimum number of data fragments needed
+        if (this.verification_mode) {
+            const saved_data = chunk.data;
+            chunk.data = undefined;
+            for (const frag of data_frags) frag.data = undefined;
+            const parity_frags = all_frags.filter(frag => frag.parity_index >= 0);
+            const verify_frags = parity_frags.concat(data_frags.slice(0, data_frags.length - parity_frags.length));
+            await Promise.all(verify_frags.map(frag => this.read_frag(frag, chunk)));
+            await this.decode_chunk(chunk);
+            assert(chunk.data.equals(saved_data));
+        }
+    }
+
+    async decode_chunk(chunk) {
+        await new Promise((resolve, reject) =>
+            nb_native().chunk_coder('dec', chunk, err => (err ? reject(err) : resolve()))
+        );
+    }
+
+    async encode_chunk(chunk) {
+        await new Promise((resolve, reject) =>
+            nb_native().chunk_coder('enc', chunk, err => (err ? reject(err) : resolve()))
+        );
+    }
+
+    /**
+     * @param {nb.Frag} frag 
+     * @param {nb.Chunk} chunk
+     * @returns {Promise<void>}
+     */
+    async read_frag(frag, chunk) {
+
+        if (frag.data) return;
+        if (!frag.blocks) return;
+
+        // verification mode reads all the blocks instead of just one
+        if (this.verification_mode) {
+            const block_md0 = frag.blocks[0].to_block_md();
+            try {
+                const buffers = await P.map(frag.blocks, block => this.read_block(block));
+                frag.data = buffers[0];
+                for (let i = 1; i < buffers.length; ++i) {
+                    const buffer = buffers[i];
+                    if (block_md0.digest_type !== chunk.chunk_coder_config.frag_digest_type ||
+                        block_md0.digest_b64 !== frag.digest_b64) {
+                        throw new Error('READ _read_frag: (verification_mode) inconsistent replica digests');
+                    }
+                    assert(buffer.equals(frag.data), 'READ _read_frag: (verification_mode) inconsistent data');
+                }
+            } catch (err) {
+                await this.report_error(block_md0, 'read', err);
+            }
+        } else {
+            for (const block of frag.blocks) {
+                try {
+                    frag.data = await this.read_block(block);
+                    return;
+                } catch (err) {
+                    await this.report_error(block.to_block_md(), 'read', err);
+                }
+            }
+        }
+    }
+
+    /**
+     * @param {nb.Block} block
+     * @returns {Promise<Buffer>}
+     */
+    async read_block(block) {
+        // use semaphore to surround the IO
+        return block_read_sem_agent.surround_key(block.node_id.toHexString(), async () =>
+            block_read_sem_global.surround(async () => {
+                const block_md = block.to_block_md();
+                dbg.log1('read_block:', block._id, 'from', block.address);
+
+                this._error_injection_on_read();
+
+                const res = await block_store_client.read_block(this.rpc_client, {
+                    block_md,
+                }, {
+                    address: block.address,
+                    timeout: config.IO_READ_BLOCK_TIMEOUT,
+                    auth_token: null // ignore the client options when talking to agents
+                });
+
+                /** @type {Buffer} */
+                const data = res[RPC_BUFFERS].data;
+
+                // verification mode checks here the block digest.
+                // this detects tampering which the agent did not report which means the agent is hacked.
+                // we don't do this in normal mode because our native decoding checks it,
+                // however the native code does not return a TAMPERING error that the system understands.
+                // TODO GUY OPTIMIZE translate tampering errors from native decode (also for normal mode)
+                if (this.verification_mode) {
+                    const digest_b64 = crypto.createHash(block_md.digest_type).update(data).digest('base64');
+                    if (digest_b64 !== block_md.digest_b64) {
+                        throw new RpcError('TAMPERING', 'Block digest varification failed ' + block_md.id);
+                    }
+                }
+
+                return data;
+            }));
+    }
+
     _error_injection_on_write() {
         if (config.ERROR_INJECTON_ON_WRITE &&
             config.ERROR_INJECTON_ON_WRITE > Math.random()) {
             throw new RpcError('ERROR_INJECTON_ON_WRITE');
+        }
+    }
+
+    _error_injection_on_read() {
+        if (config.ERROR_INJECTON_ON_READ &&
+            config.ERROR_INJECTON_ON_READ > Math.random()) {
+            throw new RpcError('ERROR_INJECTON_ON_READ');
         }
     }
 

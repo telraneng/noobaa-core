@@ -14,97 +14,6 @@ module.exports = {
 
     methods: {
 
-        put_object_tagging: {
-            method: 'PUT',
-            params: {
-                type: 'object',
-                required: [
-                    'tagging',
-                    'key',
-                    'bucket'
-                ],
-                properties: {
-                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
-                    },
-                    tagging: {
-                        $ref: 'common_api#/definitions/tagging'
-                    }
-                }
-            },
-            reply: {
-                type: 'object',
-                properties: {
-                    version_id: { type: 'string' },
-                }
-            },
-            auth: {
-                system: ['admin', 'user']
-            }
-        },
-
-        delete_object_tagging: {
-            method: 'DELETE',
-            params: {
-                type: 'object',
-                required: [
-                    'key',
-                    'bucket'
-                ],
-                properties: {
-                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
-                    },
-                    version_id: {
-                        type: 'string'
-                    }
-                }
-            },
-            reply: {
-                type: 'object',
-                properties: {
-                    version_id: { type: 'string' },
-                }
-            },
-            auth: {
-                system: ['admin', 'user']
-            }
-        },
-
-        get_object_tagging: {
-            method: 'GET',
-            params: {
-                type: 'object',
-                required: [
-                    'key',
-                    'bucket'
-                ],
-                properties: {
-                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: {
-                        type: 'string',
-                    },
-                    version_id: {
-                        type: 'string'
-                    }
-                }
-            },
-            reply: {
-                type: 'object',
-                properties: {
-                    tagging: {
-                        $ref: 'common_api#/definitions/tagging'
-                    },
-                    version_id: { type: 'string' }
-                }
-            },
-            auth: {
-                system: ['admin', 'user']
-            }
-        },
-
         create_object_upload: {
             method: 'POST',
             params: {
@@ -473,26 +382,19 @@ module.exports = {
             method: 'PUT',
             params: {
                 type: 'object',
-                required: [],
+                required: ['obj_id', 'copy_source'],
                 properties: {
-                    source: {
+                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                    key: { type: 'string' },
+                    obj_id: { objectid: true },
+                    multipart_id: { objectid: true },
+                    copy_source: {
                         type: 'object',
+                        required: ['obj_id'],
                         properties: {
-                            bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                            key: { type: 'string' },
                             obj_id: { objectid: true },
-                            version_id: { type: 'string' },
                             start: { type: 'integer' },
                             end: { type: 'integer' },
-                        }
-                    },
-                    target: {
-                        type: 'object',
-                        properties: {
-                            bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                            key: { type: 'string' },
-                            obj_id: { objectid: true },
-                            multipart_id: { objectid: true },
                         }
                     },
                 },
@@ -590,7 +492,6 @@ module.exports = {
                 system: 'admin'
             }
         },
-
 
         read_host_mappings: {
             method: 'GET',
@@ -1190,6 +1091,97 @@ module.exports = {
             },
             auth: {
                 system: 'admin'
+            }
+        },
+
+        put_object_tagging: {
+            method: 'PUT',
+            params: {
+                type: 'object',
+                required: [
+                    'tagging',
+                    'key',
+                    'bucket'
+                ],
+                properties: {
+                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                    key: {
+                        type: 'string',
+                    },
+                    tagging: {
+                        $ref: 'common_api#/definitions/tagging'
+                    }
+                }
+            },
+            reply: {
+                type: 'object',
+                properties: {
+                    version_id: { type: 'string' },
+                }
+            },
+            auth: {
+                system: ['admin', 'user']
+            }
+        },
+
+        delete_object_tagging: {
+            method: 'DELETE',
+            params: {
+                type: 'object',
+                required: [
+                    'key',
+                    'bucket'
+                ],
+                properties: {
+                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                    key: {
+                        type: 'string',
+                    },
+                    version_id: {
+                        type: 'string'
+                    }
+                }
+            },
+            reply: {
+                type: 'object',
+                properties: {
+                    version_id: { type: 'string' },
+                }
+            },
+            auth: {
+                system: ['admin', 'user']
+            }
+        },
+
+        get_object_tagging: {
+            method: 'GET',
+            params: {
+                type: 'object',
+                required: [
+                    'key',
+                    'bucket'
+                ],
+                properties: {
+                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                    key: {
+                        type: 'string',
+                    },
+                    version_id: {
+                        type: 'string'
+                    }
+                }
+            },
+            reply: {
+                type: 'object',
+                properties: {
+                    tagging: {
+                        $ref: 'common_api#/definitions/tagging'
+                    },
+                    version_id: { type: 'string' }
+                }
+            },
+            auth: {
+                system: ['admin', 'user']
             }
         },
 

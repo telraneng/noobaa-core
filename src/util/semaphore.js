@@ -31,30 +31,39 @@ class Semaphore {
 
     /**
      * surround the function call with a wait() and release()
+     * @template T
+     * @param {() => Promise<T>} func
+     * @returns {Promise<T>}
      */
-    surround(func) {
-        return P.resolve()
-            .then(() => this.wait())
-            .then(() =>
-                // Release should be called only when the wait was successful
-                // If the item did not take any "resources"/value from the semaphore
-                // Then we should not release it because it will just increase our semaphore value
-                P.try(func).finally(() => this.release())
-            );
+    async surround(func) {
+        await this.wait();
+        try {
+            return await func();
+        } finally {
+            // Release should be called only when the wait was successful
+            // If the item did not take any "resources"/value from the semaphore
+            // Then we should not release it because it will just increase our semaphore value
+            this.release();
+        }
     }
 
     /**
      * surround the function call with a wait(count) and release(count)
+     * @template T
+     * @param {number} count
+     * @param {() => Promise<T>} func
+     * @returns {Promise<T>}
      */
-    surround_count(count, func) {
-        return P.resolve()
-            .then(() => this.wait(count))
-            .then(() =>
-                // Release should be called only when the wait was successful
-                // If the item did not take any "resources"/value from the semaphore
-                // Then we should not release it because it will just increase our semaphore value
-                P.try(func).finally(() => this.release(count))
-            );
+    async surround_count(count, func) {
+        await this.wait(count);
+        try {
+            return await func();
+        } finally {
+            // Release should be called only when the wait was successful
+            // If the item did not take any "resources"/value from the semaphore
+            // Then we should not release it because it will just increase our semaphore value
+            this.release(count);
+        }
     }
 
     is_empty() {
@@ -96,7 +105,7 @@ class Semaphore {
      * once the allocated ammount is available.
      *
      */
-    wait(count) {
+    async wait(count) {
         count = to_sem_count(count);
 
         // if the queue is not empty we wait to keep fairness

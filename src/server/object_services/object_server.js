@@ -292,50 +292,6 @@ async function abort_object_upload(req) {
 
 /**
  *
- * GET_MAPPING
- *
- */
-async function get_mapping(req) {
-    throw_if_maintenance(req);
-    const { chunks, move_to_tier, check_dups, location_info } = req.rpc_params;
-    const get_map = new map_server.GetMapping({
-        chunks: chunks.map(chunk_info => new ChunkAPI(chunk_info, system_store)),
-        check_dups: Boolean(check_dups),
-        move_to_tier: move_to_tier && system_store.data.get_by_id(move_to_tier),
-        location_info,
-    });
-    const res_chunks = await get_map.run();
-    return { chunks: res_chunks.map(chunk => chunk.to_api()) };
-}
-
-
-/**
- *
- * PUT_MAPPING
- *
- */
-async function put_mapping(req) {
-    throw_if_maintenance(req);
-    // const obj = await find_cached_object_upload(req);
-    const { chunks, move_to_tier } = req.rpc_params;
-    const put_map = new map_server.PutMapping({
-        chunks: chunks.map(chunk_info => new ChunkAPI(chunk_info, system_store)),
-        move_to_tier: move_to_tier && system_store.data.get_by_id(move_to_tier),
-    });
-    await put_map.run();
-}
-
-/**
- *
- * copy_object_parts
- *
- */
-async function copy_object_parts(req) {
-    BLA BLA BLA
-}
-
-/**
- *
  * create_multipart
  *
  */
@@ -453,6 +409,71 @@ async function list_multiparts(req) {
     return reply;
 }
 
+
+/**
+ *
+ * GET_MAPPING
+ *
+ */
+async function get_mapping(req) {
+    throw_if_maintenance(req);
+    const { chunks, move_to_tier, check_dups, location_info } = req.rpc_params;
+    // TODO: const obj = await find_cached_object_upload(req);
+    const get_map = new map_server.GetMapping({
+        chunks: chunks.map(chunk_info => new ChunkAPI(chunk_info, system_store)),
+        check_dups: Boolean(check_dups),
+        move_to_tier: move_to_tier && system_store.data.get_by_id(move_to_tier),
+        location_info,
+    });
+    const res_chunks = await get_map.run();
+    return { chunks: res_chunks.map(chunk => chunk.to_api()) };
+}
+
+
+/**
+ *
+ * PUT_MAPPING
+ *
+ */
+async function put_mapping(req) {
+    throw_if_maintenance(req);
+    // TODO: const obj = await find_cached_object_upload(req);
+    const { chunks, move_to_tier } = req.rpc_params;
+    const put_map = new map_server.PutMapping({
+        chunks: chunks.map(chunk_info => new ChunkAPI(chunk_info, system_store)),
+        move_to_tier: move_to_tier && system_store.data.get_by_id(move_to_tier),
+    });
+    await put_map.run();
+}
+
+/**
+ *
+ * copy_object_parts
+ *
+ */
+async function copy_object_parts(req) {
+    throw_if_maintenance(req);
+    const [obj, source_obj, multipart] = await Promise.all([
+        find_object_upload(req),
+        MDStore.instance().find_object_by_id(req.rpc_params.copy_source.obj_id),
+        req.rpc_params.multipart_id && MDStore.instance().find_multipart_by_id(
+            MDStore.instance().make_md_id(req.rpc_params.multipart_id)
+        ),
+    ]);
+    const parts = await MDStore.instance().find_all_parts_of_object(source_obj);
+    for (const part of parts) {
+        part._id = MDStore.instance().make_md_id();
+        part.obj = obj._id;
+        part.bucket = req.bucket._id;
+        part.multipart = multipart ? multipart._id : undefined;
+        part.uncommitted = true;
+    }
+    await MDStore.instance().insert_parts(parts);
+    return {
+        object_md: get_object_info(source_obj),
+        num_parts: parts.length,
+    };
+}
 
 /**
  *
