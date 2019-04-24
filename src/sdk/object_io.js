@@ -261,7 +261,7 @@ class ObjectIO {
         const { obj_id, bucket, key, version_id, ranges } = params.copy_source;
         if (bucket === params.bucket && !ranges) {
             /** @type {{ object_md: nb.ObjectMD, num_parts: number }} */
-            const { object_md, num_parts } = await params.client.object.copy_object_parts({
+            const { object_md, num_parts } = await params.client.object.copy_object_mapping({
                 bucket: params.bucket,
                 key: params.key,
                 obj_id: params.obj_id,

@@ -151,7 +151,7 @@ function upload_file() {
 
 function read_mappings() {
     console.log(`read objects mapping for file ${TEST_CTX.key}`);
-    return client.object.read_object_mappings({
+    return client.object.read_object_mapping({
             bucket: TEST_CTX.bucket,
             key: TEST_CTX.key,
             adminfo: true

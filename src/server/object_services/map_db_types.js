@@ -69,7 +69,7 @@ class ChunkDB {
 
 
     get frags() {
-        if (!this.__frags) this.__frags = this.chunk_db.frags.map(new_frag_db);
+        if (!this.__frags) this.__frags = this.chunk_db.frags.map(frag_db => new_frag_db(frag_db, this));
         return this.__frags;
     }
     get frag_by_index() {
@@ -99,7 +99,7 @@ class ChunkDB {
             size: this.frag_size,
             node: undefined,
             pool: undefined,
-        });
+        }, frag, this);
         block.allocation_pools = pools;
         frag.blocks.push(block);
         frag.is_building_blocks = true;
@@ -107,9 +107,10 @@ class ChunkDB {
     }
 
     /**
+     * @param {boolean} [adminfo]
      * @returns {nb.ChunkInfo}
      */
-    to_api() {
+    to_api(adminfo) {
         return {
             _id: optional_id_str(this._id),
             bucket_id: optional_id_str(this.bucket_id),
@@ -126,7 +127,7 @@ class ChunkDB {
             is_accessible: this.is_accessible,
             is_building_blocks: this.is_building_blocks,
             is_building_frags: this.is_building_frags,
-            frags: this.frags.map(frag => frag.to_api()),
+            frags: this.frags.map(frag => frag.to_api(adminfo)),
             parts: this.parts.map(part => part.to_api()),
         };
     }
@@ -156,12 +157,17 @@ class FragDB {
 
     /**
      * @param {nb.FragSchemaDB} frag_db 
+     * @param {nb.Chunk} chunk
      */
-    constructor(frag_db) {
+    constructor(frag_db, chunk) {
         this.frag_db = frag_db;
         this.data = undefined_buffer;
         this.is_accessible = false;
         this.is_building_blocks = false;
+
+        // needed only for digest_type and digest_b64:
+        this.chunk = chunk;
+
         FragDB.implements_interface(this);
     }
 
@@ -177,7 +183,11 @@ class FragDB {
         throw new Error('BAD FRAG ' + util.inspect(this));
     }
     get blocks() {
-        if (!this.__blocks) this.__blocks = this.frag_db.blocks.map(new_block_db);
+        if (!this.__blocks) {
+            this.__blocks = this.frag_db.blocks.map(block_db =>
+                new_block_db(block_db, this, this.chunk)
+            );
+        }
         return this.__blocks;
     }
 
@@ -186,16 +196,17 @@ class FragDB {
     }
 
     /**
+     * @param {boolean} [adminfo]
      * @returns {nb.FragInfo}
      */
-    to_api() {
+    to_api(adminfo) {
         return {
             _id: optional_id_str(this._id),
             data_index: this.data_index,
             parity_index: this.parity_index,
             lrc_index: this.lrc_index,
             digest_b64: this.digest_b64,
-            blocks: this.blocks.map(block => block.to_api())
+            blocks: this.blocks.map(block => block.to_api(adminfo))
         };
     }
 
@@ -220,8 +231,10 @@ class BlockDB {
 
     /**
      * @param {nb.BlockSchemaDB} block_db
+     * @param {nb.Frag} frag
+     * @param {nb.Chunk} chunk
      */
-    constructor(block_db) {
+    constructor(block_db, frag, chunk) {
         this.block_db = block_db;
         this.is_accessible = false;
         this.is_preallocated = false;
@@ -236,6 +249,11 @@ class BlockDB {
         // this.is_local_mirror = false;
         /** @type {nb.NodeAPI} */
         this.node = undefined;
+
+        // needed only for digest_type and digest_b64:
+        this.frag = frag;
+        this.chunk = chunk;
+
         BlockDB.implements_interface(this);
     }
 
@@ -282,8 +300,8 @@ class BlockDB {
             pool: optional_id_str(this.block_db.pool),
             address: this.address,
             size: this.block_db.size,
-            digest_type: string,
-            digest_b64: string,
+            digest_type: this.chunk.chunk_coder_config.frag_digest_type,
+            digest_b64: this.frag.digest_b64,
             node_type: this.node.node_type,
             is_preallocated: this.is_preallocated,
         };
@@ -402,16 +420,19 @@ class PartDB {
 
 /**
  * @param {nb.FragSchemaDB} frag_db 
+ * @param {nb.Chunk} chunk
  */
-function new_frag_db(frag_db) {
-    return new FragDB(frag_db);
+function new_frag_db(frag_db, chunk) {
+    return new FragDB(frag_db, chunk);
 }
 
 /**
  * @param {nb.BlockSchemaDB} block_db 
+ * @param {nb.Frag} frag
+ * @param {nb.Chunk} chunk
  */
-function new_block_db(block_db) {
-    return new BlockDB(block_db);
+function new_block_db(block_db, frag, chunk) {
+    return new BlockDB(block_db, frag, chunk);
 }
 
 /**

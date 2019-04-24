@@ -222,7 +222,15 @@ class NodesClient {
             .tap(res => res.latency_groups.forEach(group => mongo_utils.fix_id_type(group.nodes)));
     }
 
-    // TODO: Fields doesn't seem to filter and work
+    /**
+     * TODO: Fields doesn't seem to filter and work
+     * @template T
+     * @param {nb.ID} system_id
+     * @param {T[]} docs
+     * @param {string} doc_id_path
+     * @param {string} doc_path
+     * @param {Object} fields
+     */
     populate_nodes(system_id, docs, doc_id_path, doc_path, fields) {
         const docs_list = docs && !_.isArray(docs) ? [docs] : docs;
         const ids = mongo_utils.uniq_ids(docs_list, doc_id_path);
@@ -247,6 +255,7 @@ class NodesClient {
                 })
             }))
             .then(res => {
+                console.log('LIST NODES', res.nodes);
                 const idmap = _.keyBy(res.nodes, '_id');
                 _.each(docs_list, doc => {
                     const id = _.get(doc, doc_id_path);
@@ -267,8 +276,15 @@ class NodesClient {
             });
     }
 
+    /**
+     * @template T
+     * @param {nb.ID} system_id
+     * @param {T[]} docs
+     * @param {string} doc_id_path
+     * @param {string} doc_path
+     */
     populate_nodes_for_map(system_id, docs, doc_id_path, doc_path) {
-        return this.populate_nodes(system_id, docs, doc_path, NODE_FIELDS_FOR_MAP);
+        return this.populate_nodes(system_id, docs, doc_id_path, doc_path, NODE_FIELDS_FOR_MAP);
     }
 
     async report_error_on_node_blocks(system_id, blocks_report, bucket_name) {

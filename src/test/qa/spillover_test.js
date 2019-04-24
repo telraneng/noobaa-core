@@ -179,7 +179,7 @@ async function checkFileInPool(file_name, pool) {
     while (keep_run) {
         try {
             console.log(`Checking file ${file_name} is available and contains exactly in pool ${pool}`);
-            const object_mappings = await client.object.read_object_mappings({
+            const object_mappings = await client.object.read_object_mapping({
                 bucket,
                 key: file_name,
                 adminfo: true

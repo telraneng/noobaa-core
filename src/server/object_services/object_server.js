@@ -448,10 +448,10 @@ async function put_mapping(req) {
 
 /**
  *
- * copy_object_parts
+ * copy_object_mapping
  *
  */
-async function copy_object_parts(req) {
+async function copy_object_mapping(req) {
     throw_if_maintenance(req);
     const [obj, source_obj, multipart] = await Promise.all([
         find_object_upload(req),
@@ -477,36 +477,49 @@ async function copy_object_parts(req) {
 
 /**
  *
- * READ_OBJECT_MAPPINGS
+ * read_object_mapping
  *
  */
-async function read_object_mappings(req) {
-    const { start, end, skip, limit, adminfo, location_info } = req.rpc_params;
-
-    if (adminfo && req.role !== 'admin') {
-        throw new RpcError('UNAUTHORIZED', 'read_object_mappings: role should be admin');
-    }
+async function read_object_mapping(req) {
+    const { start, end, location_info } = req.rpc_params;
 
     const obj = await find_object_md(req);
-    const parts = await map_reader.read_object_mappings(obj, start, end, skip, limit, adminfo, location_info);
+    const chunks = await map_reader.read_object_mapping(obj, start, end, location_info);
     const info = get_object_info(obj);
 
-    // when called from admin console, we do not update the stats
-    // so that viewing the mapping in the ui will not increase read count
-    if (!adminfo) {
-        const date_now = new Date();
-        MDStore.instance().update_object_by_id(
-            obj._id, { 'stats.last_read': date_now },
-            undefined, { 'stats.reads': 1 }
-        );
-        MDStore.instance().update_chunks_by_ids(
-            _.map(parts, part => part.chunk_id), { tier_lru: date_now }
-        );
-    }
+    // update the object read stats and the chunks hit date
+    const date_now = new Date();
+    MDStore.instance().update_object_by_id(
+        obj._id, { 'stats.last_read': date_now },
+        undefined, { 'stats.reads': 1 }
+    );
+    MDStore.instance().update_chunks_by_ids(
+        chunks.map(chunk => chunk._id), { tier_lru: date_now }
+    );
 
     return {
         object_md: info,
-        parts,
+        chunks: chunks.map(chunk => chunk.to_api()),
+        total_parts: obj.num_parts || 0,
+    };
+}
+
+
+/**
+ *
+ * read_object_mapping_admin
+ *
+ */
+async function read_object_mapping_admin(req) {
+    const { skip, limit } = req.rpc_params;
+
+    const obj = await find_object_md(req);
+    const chunks = await map_reader.read_object_mapping_admin(obj, skip, limit);
+    const info = get_object_info(obj);
+
+    return {
+        object_md: info,
+        chunks: chunks.map(chunk => chunk.to_api(true)),
         total_parts: obj.num_parts || 0,
     };
 }
@@ -587,7 +600,7 @@ async function read_object_md(req) {
         // count object capacity
         const MAX_SIZE_CAP_FOR_OBJECT_RAW_QUERY = 20 * 1024 * 1024 * 1024;
         if (info.size < MAX_SIZE_CAP_FOR_OBJECT_RAW_QUERY) {
-            const parts = await map_reader.read_object_mappings(obj, undefined, undefined, undefined, undefined, adminfo);
+            const parts = await map_reader.read_object_mapping(obj, undefined, undefined, undefined, undefined, adminfo);
             info.capacity_size = 0;
             _.forEach(parts, part => _.forEach(part.chunk.frags, frag => _.forEach(frag.blocks, block => {
                 info.capacity_size += block.block_md.size;
@@ -1665,12 +1678,12 @@ exports.abort_object_upload = abort_object_upload;
 exports.create_multipart = create_multipart;
 exports.complete_multipart = complete_multipart;
 exports.list_multiparts = list_multiparts;
-// allocation of parts chunks and blocks
+// mapping
 exports.get_mapping = get_mapping;
 exports.put_mapping = put_mapping;
-exports.copy_object_parts = copy_object_parts;
-// read
-exports.read_object_mappings = read_object_mappings;
+exports.copy_object_mapping = copy_object_mapping;
+exports.read_object_mapping = read_object_mapping;
+exports.read_object_mapping_admin = read_object_mapping_admin;
 exports.read_node_mappings = read_node_mappings;
 exports.read_host_mappings = read_host_mappings;
 // object meta-data

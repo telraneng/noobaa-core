@@ -79,6 +79,8 @@ coretest.describe_mapper_test_case({
             source_stream: readable_buffer(data),
         };
         await object_io.upload_object(params);
+        await verify_read_mappings(key, size);
+        await verify_read_data(key, data, params.obj_id);
     });
 
     mocha.it('empty object', async function() {
@@ -203,10 +205,12 @@ coretest.describe_mapper_test_case({
     }
 
     async function verify_read_mappings(key, size) {
-        const { parts } = await rpc_client.object.read_object_mappings({ bucket, key, adminfo: true });
+        const { chunks } = await rpc_client.object.read_object_mapping_admin({ bucket, key });
         let pos = 0;
-        for (const part of parts) {
-            const { start, end, chunk: { frags } } = part;
+        for (const chunk of chunks) {
+            const frags = chunk.frags;
+            const part = chunk.parts[0];
+            const { start, end } = part;
             // console.log(`TODO GGG READ PART pos=${pos}`, JSON.stringify(part));
             assert.strictEqual(start, pos);
             pos = end;
@@ -225,7 +229,8 @@ coretest.describe_mapper_test_case({
     }
 
     async function verify_read_data(key, data, obj_id) {
-        const read_buf = await object_io.read_entire_object({ client: rpc_client, bucket, key, obj_id });
+        const object_md = await rpc_client.object.read_object_md({bucket, key, obj_id });
+        const read_buf = await object_io.read_entire_object({ client: rpc_client, object_md });
         // verify the read buffer equals the written buffer
         assert.strictEqual(data.length, read_buf.length);
         for (let i = 0; i < data.length; i++) {

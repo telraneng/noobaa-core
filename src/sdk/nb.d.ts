@@ -251,7 +251,7 @@ interface Chunk {
     set_new_chunk_id();
     add_block_allocation(frag: Frag, pools: Pool[]);
 
-    to_api(): ChunkInfo;
+    to_api(adminfo?: boolean): ChunkInfo;
     to_db(): ChunkSchemaDB;
 }
 
@@ -272,7 +272,7 @@ interface Frag {
 
     set_new_frag_id();
 
-    to_api(): FragInfo;
+    to_api(adminfo?: boolean): FragInfo;
     to_db(): FragSchemaDB;
 }
 

@@ -378,7 +378,7 @@ module.exports = {
             }
         },
 
-        copy_object_parts: {
+        copy_object_mapping: {
             method: 'PUT',
             params: {
                 type: 'object',
@@ -412,31 +412,23 @@ module.exports = {
             }
         },
 
-        read_object_mappings: {
+        read_object_mapping: {
             method: 'GET',
             params: {
                 type: 'object',
                 required: [
-                    // 'obj_id',
-                    'bucket',
-                    'key',
+                    'obj_id',
                 ],
                 properties: {
                     obj_id: { objectid: true },
-                    version_id: { type: 'string' },
-                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
-                    key: { type: 'string' },
                     start: { type: 'integer' },
                     end: { type: 'integer' },
-                    skip: { type: 'integer' },
-                    limit: { type: 'integer' },
                     location_info: { $ref: 'common_api#/definitions/location_info' },
-                    adminfo: { type: 'boolean' },
                 },
             },
             reply: {
                 type: 'object',
-                required: ['object_md', 'chunks'],
+                required: ['object_md', 'total_parts', 'chunks'],
                 properties: {
                     object_md: { $ref: '#/definitions/object_info' },
                     total_parts: { type: 'integer' },
@@ -448,6 +440,39 @@ module.exports = {
             },
             auth: {
                 system: ['admin', 'user', 'viewer']
+            }
+        },
+
+        read_object_mapping_admin: {
+            method: 'GET',
+            params: {
+                type: 'object',
+                required: [
+                    'bucket',
+                    'key',
+                ],
+                properties: {
+                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                    key: { type: 'string' },
+                    version_id: { type: 'string' },
+                    skip: { type: 'integer' },
+                    limit: { type: 'integer' },
+                },
+            },
+            reply: {
+                type: 'object',
+                required: ['object_md', 'total_parts', 'chunks'],
+                properties: {
+                    object_md: { $ref: '#/definitions/object_info' },
+                    total_parts: { type: 'integer' },
+                    chunks: {
+                        type: 'array',
+                        items: { $ref: '#/definitions/chunk_info' },
+                    },
+                }
+            },
+            auth: {
+                system: 'admin'
             }
         },
 

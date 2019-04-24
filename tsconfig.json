@@ -5,6 +5,7 @@
         "src/sdk/object*",
         "src/server/object_services/*",
         "src/tools/mapper_speed.js",
+        "src/test/unit_tests/test_object_io.js",
     ],
     "exclude": [
         
@@ -18,7 +19,7 @@
         "checkJs": true,
         // Allows to require json files
         "resolveJsonModule": true,
-        "noImplictAny": true,
+        "noImplicitAny": false,
         
         // noResolve does not follow require/import 
         // so only included files will be compiled/checked

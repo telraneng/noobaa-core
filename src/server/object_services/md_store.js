@@ -927,10 +927,9 @@ class MDStore {
      * @param {number} params.start_gte
      * @param {number} params.start_lt
      * @param {number} params.end_gt
-     * @param {number} [params.skip]
-     * @param {number} [params.limit]
+     * @returns {Promise<nb.PartSchemaDB[]>}
      */
-    find_parts_by_start_range({ obj_id, start_gte, start_lt, end_gt, skip, limit }) {
+    async find_parts_by_start_range({ obj_id, start_gte, start_lt, end_gt }) {
         return this._parts.col().find({
                 obj: obj_id,
                 start: {
@@ -941,15 +940,28 @@ class MDStore {
                     $gte: start_gte,
                     $lt: start_lt,
                 },
-                end: {
-                    $gt: end_gt
-                },
+                end: { $gt: end_gt },
                 deleted: null,
                 uncommitted: null,
             }, {
-                sort: {
-                    start: 1
-                },
+                sort: { start: 1 },
+            })
+            .toArray();
+    }
+
+    /**
+     * @param {Object} params
+     * @param {nb.ID} params.obj_id
+     * @param {number} [params.skip]
+     * @param {number} [params.limit]
+     */
+    async find_parts_sorted_by_start({ obj_id, skip, limit }) {
+        return this._parts.col().find({
+                obj: obj_id,
+                deleted: null,
+                uncommitted: null,
+            }, {
+                sort: { start: 1 },
                 skip: skip || 0,
                 limit: limit || 0,
             })
@@ -1132,31 +1144,27 @@ class MDStore {
         }, compact_updates(set_updates, unset_updates));
     }
 
+    /**
+     * @param {nb.ID[]} chunk_ids
+     * @returns {Promise<nb.ChunkSchemaDB[]>}
+     */
     find_chunks_by_ids(chunk_ids) {
         if (!chunk_ids || !chunk_ids.length) return;
-        return this._chunks.col().find({
-                _id: {
-                    $in: chunk_ids
-                }
-            })
-            .toArray();
+        return this._chunks.col().find({ _id: { $in: chunk_ids } }).toArray();
     }
 
     populate_chunks(docs, doc_path, fields) {
         return mongo_utils.populate(docs, doc_path, this._chunks.col(), fields);
     }
 
-    populate_chunks_for_parts(parts) {
-        return mongo_utils.populate(parts, 'chunk', this._chunks.col());
-    }
-
     /**
      * @param {nb.Bucket} bucket
      * @param {nb.DBBuffer[]} dedup_keys
-     * @returns {nb.ChunkSchemaDB[]}
+     * @returns {Promise<nb.ChunkSchemaDB[]>}
      */
-    find_chunks_by_dedup_key(bucket, dedup_keys) {
-        return this._chunks.col().find({
+    async find_chunks_by_dedup_key(bucket, dedup_keys) {
+        /** @type {nb.ChunkSchemaDB[]} */
+        const chunks = await this._chunks.col().find({
                 system: bucket.system._id,
                 bucket: bucket._id,
                 dedup_key: {
@@ -1168,8 +1176,9 @@ class MDStore {
                     _id: -1 // get newer chunks first
                 }
             })
-            .toArray()
-            .then(chunks => this.load_blocks_for_chunks(chunks));
+            .toArray();
+        await this.load_blocks_for_chunks(chunks);
+        return chunks;
     }
 
     iterate_all_chunks_in_buckets(lower_marker, upper_marker, buckets, limit) {
@@ -1451,8 +1460,12 @@ class MDStore {
         return blocks;
     }
 
+    /**
+     * @param {nb.ChunkSchemaDB[]} chunks
+     * @return {Promise<void>}
+     */
     async load_blocks_for_chunks(chunks) {
-        if (!chunks || !chunks.length) return chunks;
+        if (!chunks || !chunks.length) return;
         const blocks = await this._blocks.col().find({
                 chunk: { $in: mongo_utils.uniq_ids(chunks, '_id') },
                 deleted: null,
@@ -1460,12 +1473,11 @@ class MDStore {
             .toArray();
         const blocks_by_chunk = _.groupBy(blocks, 'chunk');
         for (const chunk of chunks) {
-            const blocks_by_frag = _.groupBy(blocks_by_chunk[chunk._id], 'frag');
+            const blocks_by_frag = _.groupBy(blocks_by_chunk[chunk._id.toHexString()], 'frag');
             for (const frag of chunk.frags) {
-                frag.blocks = blocks_by_frag[frag._id];
+                frag.blocks = blocks_by_frag[frag._id.toHexString()];
             }
         }
-        return chunks;
     }
 
     iterate_node_chunks({ node_id, marker, limit }) {

@@ -234,6 +234,7 @@ function _get_tier_pools_status(pools, required_valid_nodes) {
  * @param {nb.Pool[]} pools
  * @param {string[]} avoid_nodes array of node ids to avoid
  * @param {string[]} allocated_hosts array of node ids to avoid
+ * @returns {nb.NodeAPI}
  */
 function allocate_node(pools, avoid_nodes, allocated_hosts) {
     let pool_set = _.map(pools, pool => String(pool._id)).sort().join(',');

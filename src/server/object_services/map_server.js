@@ -138,7 +138,7 @@ class GetMapping {
         const bucket = chunks[0].bucket;
         await node_allocator.refresh_tiering_alloc(bucket.tiering);
         const tiering_status = node_allocator.get_tiering_status(bucket.tiering);
-        await this.populate_chunks(chunks);
+        await populate_chunks(chunks);
         for (const chunk of chunks) {
             let selected_tier;
             if (move_to_tier) {
@@ -149,40 +149,7 @@ class GetMapping {
             } else {
                 selected_tier = mapper.select_tier_for_write(bucket.tiering, tiering_status);
             }
-            // remove from the list blocks that their node is not found
-            // and consider these blocks just like deleted blocks
             mapper.map_chunk(chunk, selected_tier, bucket.tiering, tiering_status, this.location_info);
-        }
-    }
-
-    /**
-     * @param {nb.Chunk[]} chunks
-     */
-    async populate_chunks(chunks) {
-        const blocks = /** @type {nb.Block[]} */ (
-            /** @type {unknown} */
-            (_.flatMapDeep(chunks, chunk => chunk.frags.map(frag => frag.blocks)))
-        );
-        await nodes_client.instance().populate_nodes_for_map(chunks[0].bucket.system, blocks, 'node_id', 'node');
-        for (const chunk of chunks) {
-            chunk.is_accessible = false;
-            let num_accessible_frags = 0;
-            for (const frag of chunk.frags) {
-                frag.is_accessible = false;
-                for (const block of frag.blocks) {
-                    if (!block.node || !block.node._id) {
-                        dbg.warn('ORPHAN BLOCK (ignoring)', block);
-                    }
-                    block.is_accessible = block.node && block.node.readable;
-                    if (block.is_accessible && !frag.is_accessible) {
-                        frag.is_accessible = true;
-                        num_accessible_frags += 1;
-                    }
-                }
-            }
-            if (num_accessible_frags >= chunk.chunk_coder_config.data_frags) {
-                chunk.is_accessible = true;
-            }
         }
     }
 
@@ -437,7 +404,9 @@ async function select_tier_for_write(bucket) {
  */
 async function make_room_in_tier(tier_id, bucket_id) {
     return make_room_semaphore.surround_key(String(tier_id), async () => {
+        /** @type {nb.Tier} */
         const tier = tier_id && system_store.data.get_by_id(tier_id);
+        /** @type {nb.Bucket} */
         const bucket = bucket_id && system_store.data.get_by_id(bucket_id);
         const tiering = bucket.tiering;
         const tier_and_order = tiering.tiers.find(t => String(t.tier._id) === String(tier_id));
@@ -529,7 +498,42 @@ function enough_room_in_tier(tier, bucket) {
 }
 
 
+/**
+ * @param {nb.Chunk[]} chunks
+ */
+async function populate_chunks(chunks) {
+    const blocks = /** @type {nb.Block[]} */ (
+        /** @type {unknown} */
+        (_.flatMapDeep(chunks, chunk => chunk.frags.map(frag => frag.blocks)))
+    );
+    console.log('BLOCKS BEFORE', blocks);
+    await nodes_client.instance().populate_nodes_for_map(chunks[0].bucket.system._id, blocks, 'node_id', 'node');
+    console.log('BLOCKS AFTER', blocks);
+    for (const chunk of chunks) {
+        chunk.is_accessible = false;
+        let num_accessible_frags = 0;
+        for (const frag of chunk.frags) {
+            frag.is_accessible = false;
+            for (const block of frag.blocks) {
+                if (!block.node || !block.node._id) {
+                    dbg.warn('ORPHAN BLOCK (ignoring)', block);
+                }
+                block.is_accessible = block.node && block.node.readable;
+                if (block.is_accessible && !frag.is_accessible) {
+                    frag.is_accessible = true;
+                    num_accessible_frags += 1;
+                }
+                console.log('BLOCK', block);
+            }
+        }
+        if (num_accessible_frags >= chunk.chunk_coder_config.data_frags) {
+            chunk.is_accessible = true;
+        }
+    }
+}
+
 exports.GetMapping = GetMapping;
 exports.PutMapping = PutMapping;
 exports.select_tier_for_write = select_tier_for_write;
 exports.make_room_in_tier = make_room_in_tier;
+exports.populate_chunks = populate_chunks;

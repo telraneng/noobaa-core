@@ -108,7 +108,7 @@ async function perform_placement_tests() {
 
 
     fkey = await upload_random_file();
-    let mappings = await client.object.read_object_mappings({
+    let mappings = await client.object.read_object_mapping({
         bucket: TEST_BUCKET_NAME,
         key: fkey,
         adminfo: true
@@ -127,7 +127,7 @@ async function perform_placement_tests() {
     });
 
     fkey = await upload_random_file();
-    mappings = await client.object.read_object_mappings({
+    mappings = await client.object.read_object_mapping({
         bucket: TEST_BUCKET_NAME,
         key: fkey,
         adminfo: true

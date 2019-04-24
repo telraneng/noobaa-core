@@ -160,7 +160,7 @@ class MapClient {
      * @returns {Promise<nb.Chunk[]>}
      */
     async read_object_mapping() {
-        const res = await this.rpc_client.object.read_object_mappings({
+        const res = await this.rpc_client.object.read_object_mapping({
             obj_id: this.object_md._id,
             start: this.read_start,
             end: this.read_end,

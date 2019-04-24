@@ -173,7 +173,7 @@ function verify_object_parts_on_cloud_nodes(replicas_in_tier, bucket_name, objec
             },
             function() {
                 blocks_correct = true;
-                return client.object.read_object_mappings({
+                return client.object.read_object_mapping({
                         bucket: bucket_name,
                         key: object_key,
                         adminfo: true

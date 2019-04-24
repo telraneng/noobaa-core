@@ -170,12 +170,12 @@ async function readFiles() {
 }
 
 async function getRebuildReplicasStatus(key) {
-    const read_object_mappings = await client.object.read_object_mappings({
+    const read_object_mapping = await client.object.read_object_mapping({
         bucket,
         key,
         adminfo: true
     });
-    const fileParts = read_object_mappings.parts;
+    const fileParts = read_object_mapping.parts;
     const filesReplicas = fileParts.map(part => part.chunk.frags[0].blocks);
     for (let i = 0; i < filesReplicas.length; i++) {
         const replicaStatusOnline = filesReplicas[i].filter(replica => replica.adminfo.online === true);
@@ -204,12 +204,12 @@ async function waitForRebuildReplicasParts(file) {
 
 async function getFilesChunksHealthStatus(key) {
     try {
-        const read_object_mappings = await client.object.read_object_mappings({
+        const read_object_mapping = await client.object.read_object_mapping({
             bucket,
             key,
             adminfo: true
         });
-        const parts = read_object_mappings.parts;
+        const parts = read_object_mapping.parts;
         const chunkAvailable = parts.filter(chunk => chunk.chunk.adminfo.health === 'available').length;
         const chunkNum = parts.length;
         if (chunkAvailable === chunkNum) {
