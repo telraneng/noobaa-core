@@ -13,7 +13,6 @@ const assert = require('assert');
 const stream = require('stream');
 
 const ObjectIO = require('../../sdk/object_io');
-const promise_utils = require('../../util/promise_utils');
 
 const { rpc_client } = coretest;
 const object_io = new ObjectIO();
@@ -39,8 +38,6 @@ coretest.describe_mapper_test_case({
     chunk_coder_config,
 }) => {
 
-    if (data_placement !== 'SPREAD' || num_pools !== 1 || total_blocks !== 1) return;
-
     // TODO we need to create more nodes and pools to support all MAPPER_TEST_CASES
     if (data_placement !== 'SPREAD' || num_pools !== 1 || total_blocks > 10) return;
 
@@ -65,23 +62,9 @@ coretest.describe_mapper_test_case({
         nodes_list = nodes;
     });
 
-    mocha.it.only('test1', async function() {
-        const size = 111;
-        const data = generator.update(Buffer.alloc(size));
-        const key = `${KEY}-${key_counter}`;
-        key_counter += 1;
-        const params = {
-            client: rpc_client,
-            bucket,
-            key,
-            size,
-            content_type: 'application/octet-stream',
-            source_stream: readable_buffer(data),
-        };
-        await object_io.upload_object(params);
-        await verify_read_mappings(key, size);
-        await verify_read_data(key, data, params.obj_id);
-    });
+    // mocha.it.only('test1', async function() {
+    //     await upload_and_verify(111);
+    // });
 
     mocha.it('empty object', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
@@ -99,18 +82,18 @@ coretest.describe_mapper_test_case({
         await rpc_client.object.delete_object({ bucket, key });
     });
 
-    mocha.it('upload_and_verify', async function() {
+    mocha.it.only('upload_and_verify', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
-        await promise_utils.loop(small_loops, () => upload_and_verify(61));
-        await promise_utils.loop(medium_loops, () => upload_and_verify(4015));
-        await promise_utils.loop(big_loops, () => upload_and_verify(10326));
+        for (let i = 0; i < small_loops; ++i) await upload_and_verify(61);
+        for (let i = 0; i < medium_loops; ++i) await upload_and_verify(4015);
+        for (let i = 0; i < big_loops; ++i) await upload_and_verify(10326);
     });
 
-    mocha.it('multipart_upload_and_verify', async function() {
+    mocha.it.only('multipart_upload_and_verify', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
-        await promise_utils.loop(small_loops, () => multipart_upload_and_verify(45, 7));
-        await promise_utils.loop(medium_loops, () => multipart_upload_and_verify(3245, 5));
-        await promise_utils.loop(big_loops, () => multipart_upload_and_verify(7924, 3));
+        for (let i = 0; i < small_loops; ++i) await multipart_upload_and_verify(45, 7);
+        for (let i = 0; i < medium_loops; ++i) await multipart_upload_and_verify(3245, 5);
+        for (let i = 0; i < big_loops; ++i) await multipart_upload_and_verify(7924, 3);
     });
 
 
@@ -129,7 +112,7 @@ coretest.describe_mapper_test_case({
         await object_io.upload_object(params);
         await verify_read_mappings(key, size);
         await verify_read_data(key, data, params.obj_id);
-        await verify_nodes_mappings(nodes_list);
+        // await verify_nodes_mappings();
         await rpc_client.object.delete_object({ bucket, key });
         console.log('upload_and_verify: OK', size);
     }
@@ -199,12 +182,13 @@ coretest.describe_mapper_test_case({
 
         await verify_read_mappings(key, size);
         await verify_read_data(key, data, obj_id);
-        await verify_nodes_mappings();
+        // await verify_nodes_mappings();
         await rpc_client.object.delete_object({ bucket, key });
         console.log('multipart_upload_and_verify: OK', part_size, num_parts);
     }
 
     async function verify_read_mappings(key, size) {
+        /** @type {{ chunks: nb.ChunkInfo[]}} */
         const { chunks } = await rpc_client.object.read_object_mapping_admin({ bucket, key });
         let pos = 0;
         for (const chunk of chunks) {
@@ -229,7 +213,7 @@ coretest.describe_mapper_test_case({
     }
 
     async function verify_read_data(key, data, obj_id) {
-        const object_md = await rpc_client.object.read_object_md({bucket, key, obj_id });
+        const object_md = await rpc_client.object.read_object_md({ bucket, key, obj_id });
         const read_buf = await object_io.read_entire_object({ client: rpc_client, object_md });
         // verify the read buffer equals the written buffer
         assert.strictEqual(data.length, read_buf.length);

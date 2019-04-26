@@ -334,11 +334,22 @@ interface Part {
     to_db(): PartSchemaDB;
 }
 
+interface ObjectMultipart {
+    _id: ID;
+    obj: ObjectMD;
+    num: number;
+    size: number;
+    md5_b64?: string;
+    sha256_b64?: string;
+    create_time?: Date;
+    // partial
+}
+
 interface ObjectMD {
     _id: ID;
     deleted?: Date;
-    bucket: Bucket;
-    system: System;
+    bucket: ID;
+    system: ID;
     key: string;
     version_seq: number;
     version_past: boolean;
@@ -358,12 +369,29 @@ interface ObjectMD {
     tagging: { key: string; value: string; }[],
 }
 
-interface ObjectMultipart {
-    _id: ID;
-    obj: ObjectMD;
-    // partial
+interface ObjectInfo {
+    obj_id: string;
+    bucket: string;
+    key: string;
+    version_id: string;
+    is_latest: boolean;
+    delete_marker?: boolean;
+    size: number;
+    num_parts: number;
+    content_type: string;
+    upload_size?: number;
+    upload_started?: number;
+    create_time?: number;
+    etag: string;
+    md5_b64: string;
+    sha256_b64: string;
+    xattr: {};
+    stats: { reads: number; last_read: number; };
+    tagging: { key: string; value: string; }[],
+    tag_count: number;
+    s3_signed_url?: string;
+    capacity_size?: number;
 }
-
 
 
 /**********************************************************

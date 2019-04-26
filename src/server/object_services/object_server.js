@@ -600,11 +600,15 @@ async function read_object_md(req) {
         // count object capacity
         const MAX_SIZE_CAP_FOR_OBJECT_RAW_QUERY = 20 * 1024 * 1024 * 1024;
         if (info.size < MAX_SIZE_CAP_FOR_OBJECT_RAW_QUERY) {
-            const parts = await map_reader.read_object_mapping(obj, undefined, undefined, undefined, undefined, adminfo);
+            const chunks = await map_reader.read_object_mapping(obj);
             info.capacity_size = 0;
-            _.forEach(parts, part => _.forEach(part.chunk.frags, frag => _.forEach(frag.blocks, block => {
-                info.capacity_size += block.block_md.size;
-            })));
+            for (const chunk of chunks) {
+                for (const frag of chunk.frags) {
+                    for (const block of frag.blocks) {
+                        info.capacity_size += block.size;
+                    }
+                }
+            }
         }
     }
 
@@ -723,7 +727,7 @@ async function delete_multiple_objects_by_prefix(req) {
     load_bucket(req);
     const key = new RegExp('^' + _.escapeRegExp(req.rpc_params.prefix));
     // TODO: change it to perform changes in batch. Won't scale.
-    const objects = await MDStore.instance().find_objects({
+    const { objects } = await MDStore.instance().find_objects({
         bucket_id: req.bucket._id,
         key: key,
         max_create_time: req.rpc_params.create_time,
@@ -930,6 +934,7 @@ async function list_objects_admin(req) {
     dbg.log0('list_objects_admin', req.rpc_params);
     load_bucket(req);
 
+    /** @type {RegExp} */
     let key;
     if (req.rpc_params.prefix) {
         key = new RegExp('^' + _.escapeRegExp(req.rpc_params.prefix));
@@ -944,7 +949,7 @@ async function list_objects_admin(req) {
     let sort = req.rpc_params.sort;
     if (sort === 'state') sort = 'upload_started';
 
-    const res = await MDStore.instance().find_objects({
+    const { objects, counters } = await MDStore.instance().find_objects({
         bucket_id: req.bucket._id,
         key: key,
         upload_mode: req.rpc_params.upload_mode,
@@ -958,8 +963,8 @@ async function list_objects_admin(req) {
         pagination: req.rpc_params.pagination
     });
 
-    res.objects = _.map(res.objects, obj => {
-        obj = get_object_info(obj);
+    const objects_info = _.map(objects, obj => {
+        const object_info = get_object_info(obj);
         // using the internal IP doesn't work when there is a different external ip
         // or when the intention is to use dns name.
         const endpoint =
@@ -967,43 +972,49 @@ async function list_objects_admin(req) {
             url.parse(req.system.base_address || '').hostname ||
             ip_module.address();
         const account_keys = req.account.access_keys[0];
-        obj.s3_signed_url = cloud_utils.get_signed_url({
+        object_info.s3_signed_url = cloud_utils.get_signed_url({
             endpoint: endpoint,
             access_key: account_keys.access_key,
             secret_key: account_keys.secret_key,
             bucket: req.rpc_params.bucket,
-            key: obj.key,
-            version_id: obj.version_id
+            key: object_info.key,
+            version_id: object_info.version_id
         });
-        return obj;
+        return object_info;
     });
 
-    if (!res.objects.length) {
+    /** @type {string} */
+    let empty_reason;
+    if (!objects_info.length) {
         if (key) {
-            res.empty_reason = 'NO_MATCHING_KEYS';
+            empty_reason = 'NO_MATCHING_KEYS';
         } else if (req.rpc_params.upload_mode) {
             const has_uploads = await MDStore.instance().has_any_uploads_for_bucket(req.bucket._id);
             if (has_uploads) {
-                res.empty_reason = 'NO_RESULTS';
+                empty_reason = 'NO_RESULTS';
             } else {
-                res.empty_reason = 'NO_UPLOADS';
+                empty_reason = 'NO_UPLOADS';
             }
         } else {
             const has_objects = await MDStore.instance().has_any_objects_for_bucket(req.bucket._id, req.rpc_params.upload_mode);
             if (has_objects) {
                 const has_latests = await MDStore.instance().has_any_latest_objects_for_bucket(req.bucket._id, req.rpc_params.upload_mode);
                 if (has_latests) {
-                    res.empty_reason = 'NO_RESULTS';
+                    empty_reason = 'NO_RESULTS';
                 } else {
-                    res.empty_reason = 'NO_LATEST';
+                    empty_reason = 'NO_LATEST';
                 }
             } else {
-                res.empty_reason = 'NO_OBJECTS';
+                empty_reason = 'NO_OBJECTS';
             }
         }
     }
 
-    return res;
+    return {
+        objects: objects_info,
+        counters,
+        empty_reason,
+    };
 }
 
 
@@ -1022,6 +1033,7 @@ async function report_error_on_object(req) {
 async function add_endpoint_usage_report(req) {
     const start_time = new Date(req.rpc_params.start_time);
     const reports = req.rpc_params.bandwidth_usage_info.map(record => {
+        /** @type {Object} */
         const insert = _.pick(record, ['read_bytes', 'write_bytes', 'read_count', 'write_count']);
         insert.system = req.system._id;
 
@@ -1039,7 +1051,7 @@ async function add_endpoint_usage_report(req) {
         // truncate start time to the start of current hour
         // set end_time to the end of the hour
         const HOUR = 60 * 60 * 1000;
-        insert.start_time = Math.floor(start_time / HOUR) * HOUR;
+        insert.start_time = Math.floor(start_time.getTime() / HOUR) * HOUR;
         insert.end_time = insert.start_time + HOUR - 1;
         return insert;
     });
@@ -1090,10 +1102,14 @@ function report_endpoint_problems(req) {
 // UTILS //////////////////////////////////////////////////////////
 
 
+/**
+ * @param {nb.ObjectMD} md
+ * @returns {nb.ObjectInfo}
+ */
 function get_object_info(md) {
     var bucket = system_store.data.get_by_id(md.bucket);
     return {
-        obj_id: md._id,
+        obj_id: md._id.toHexString(),
         bucket: bucket.name,
         key: md.key,
         size: md.size || 0,
@@ -1130,6 +1146,10 @@ function load_bucket(req) {
     req.bucket = bucket;
 }
 
+/**
+ * @param {Object} req
+ * @returns {Promise<nb.ObjectMD>}
+ */
 async function find_object_md(req) {
     let obj;
     load_bucket(req);
@@ -1155,6 +1175,10 @@ async function find_object_md(req) {
     return obj;
 }
 
+/**
+ * @param {Object} req
+ * @returns {Promise<nb.ObjectMD>}
+ */
 async function find_object_upload(req) {
     load_bucket(req);
     const obj_id = get_obj_id(req, 'NO_SUCH_UPLOAD');
@@ -1163,6 +1187,10 @@ async function find_object_upload(req) {
     return obj;
 }
 
+/**
+ * @param {Object} req
+ * @returns {Promise<nb.ObjectMD>}
+ */
 async function find_cached_object_upload(req) {
     load_bucket(req);
     const obj_id = get_obj_id(req, 'NO_SUCH_UPLOAD');
@@ -1178,6 +1206,11 @@ function get_obj_id(req, rpc_code) {
     return MDStore.instance().make_md_id(req.rpc_params.obj_id);
 }
 
+/**
+ * @param {Object} req
+ * @param {nb.ObjectMD} obj
+ * @param {string} rpc_code
+ */
 function check_object_mode(req, obj, rpc_code) {
     if (!obj || obj.deleted || obj.delete_marker) {
         throw new RpcError(rpc_code,
@@ -1540,7 +1573,9 @@ async function update_endpoint_stats(req) {
     ]);
 }
 
-
+/**
+ * @param {nb.ObjectMD} obj
+ */
 async function _complete_object_parts(obj) {
     const context = {
         pos: 0,
@@ -1561,6 +1596,10 @@ async function _complete_object_parts(obj) {
     };
 }
 
+/**
+ * @param {nb.ObjectMD} obj
+ * @param {Object} multipart_req
+ */
 async function _complete_object_multiparts(obj, multipart_req) {
     const context = {
         pos: 0,
@@ -1569,10 +1608,10 @@ async function _complete_object_multiparts(obj, multipart_req) {
         parts_updates: [],
     };
 
-    const [multiparts, parts] = await P.join(
+    const [multiparts, parts] = await Promise.all([
         MDStore.instance().find_all_multiparts_of_object(obj._id),
         MDStore.instance().find_all_parts_of_object(obj)
-    );
+    ]);
 
     let next_part_num = 1;
     const md5 = crypto.createHash('md5');
@@ -1590,13 +1629,13 @@ async function _complete_object_multiparts(obj, multipart_req) {
         const etag_md5_b64 = Buffer.from(etag, 'hex').toString('base64');
         const group = multiparts_by_num[num];
         group.sort(_sort_multiparts_by_create_time);
-        const mp = _.find(group, it => it.md5_b64 === etag_md5_b64 && it.create_time);
+        const mp = group.find(it => Boolean(it.md5_b64 === etag_md5_b64 && it.create_time));
         if (!mp) {
             throw new RpcError('INVALID_PART',
                 `multipart num=${num} etag=${etag} etag_md5_b64=${etag_md5_b64} not found in group ${util.inspect(group)}`);
         }
-        md5.update(mp.md5_b64, 'base64');
-        const mp_parts = parts_by_mp[mp._id];
+        md5.update(Buffer.from(mp.md5_b64, 'base64'));
+        const mp_parts = parts_by_mp[mp._id.toHexString()];
         _complete_next_parts(mp_parts, context);
         used_multiparts.push(mp);
         for (const part of mp_parts) {

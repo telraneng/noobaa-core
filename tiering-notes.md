@@ -11,8 +11,9 @@
 
 ### Step 2
 - [ ] UI object-parts-reducer fix to chunks
+- [ ] map_reader - read_node_mapping & read_host_mapping
+- [ ] object_io - upload_copy should pass the object_md to read_object_stream - where to get it?
 - [ ] map_builder - test
-- [ ] upload_copy should pass the object_md to read_object_stream - where to get it?
 
 ### Step 3
 - [ ] map_reader should share prepare_chunks_group with map_server

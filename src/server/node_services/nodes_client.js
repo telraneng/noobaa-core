@@ -224,7 +224,7 @@ class NodesClient {
 
     /**
      * TODO: Fields doesn't seem to filter and work
-     * @template T
+     * @template {{}} T
      * @param {nb.ID} system_id
      * @param {T[]} docs
      * @param {string} doc_id_path
@@ -255,7 +255,6 @@ class NodesClient {
                 })
             }))
             .then(res => {
-                console.log('LIST NODES', res.nodes);
                 const idmap = _.keyBy(res.nodes, '_id');
                 _.each(docs_list, doc => {
                     const id = _.get(doc, doc_id_path);

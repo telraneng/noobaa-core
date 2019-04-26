@@ -84,7 +84,7 @@ class MapClient {
     /**
      * @param {Object} props
      * @param {nb.Chunk[]} [props.chunks]
-     * @param {nb.ObjectMD} [props.object_md]
+     * @param {nb.ObjectInfo} [props.object_md]
      * @param {number} [props.read_start]
      * @param {number} [props.read_end]
      * @param {nb.LocationInfo} [props.location_info]
@@ -161,7 +161,9 @@ class MapClient {
      */
     async read_object_mapping() {
         const res = await this.rpc_client.object.read_object_mapping({
-            obj_id: this.object_md._id,
+            obj_id: this.object_md.obj_id,
+            bucket: this.object_md.bucket,
+            key: this.object_md.key,
             start: this.read_start,
             end: this.read_end,
             location_info: this.location_info,
@@ -197,7 +199,7 @@ class MapClient {
      * @returns {Promise<nb.Chunk>}
      */
     async process_chunk(chunk, read_chunk_data) {
-        dbg.log0('MapClient.process_chunk:', chunk);
+        dbg.log1('MapClient.process_chunk:', chunk);
 
         if (chunk.dup_chunk_id) return chunk;
 

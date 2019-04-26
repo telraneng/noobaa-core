@@ -417,9 +417,13 @@ module.exports = {
             params: {
                 type: 'object',
                 required: [
+                    'bucket',
+                    'key',
                     'obj_id',
                 ],
                 properties: {
+                    bucket: { $ref: 'common_api#/definitions/bucket_name' },
+                    key: { type: 'string' },
                     obj_id: { objectid: true },
                     start: { type: 'integer' },
                     end: { type: 'integer' },

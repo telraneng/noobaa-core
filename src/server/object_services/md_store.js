@@ -269,6 +269,14 @@ class MDStore {
         return delete_marker;
     }
 
+    /**
+     * @param {Object} params
+     * @param {nb.ObjectMD} params.unmark_obj
+     * @param {nb.ObjectMD} params.put_obj
+     * @param {Object} [params.set_updates]
+     * @param {Object} [params.unset_updates]
+     * @returns {Promise<void>}
+     */
     async complete_object_upload_latest_mark_remove_current({
         unmark_obj,
         put_obj,
@@ -288,6 +296,15 @@ class MDStore {
         }
     }
 
+    /**
+     * @param {Object} params
+     * @param {nb.ObjectMD} [params.delete_obj]
+     * @param {nb.ObjectMD} params.unmark_obj
+     * @param {nb.ObjectMD} params.put_obj
+     * @param {Object} [params.set_updates]
+     * @param {Object} [params.unset_updates]
+     * @returns {Promise<void>}
+     */
     async complete_object_upload_latest_mark_remove_current_and_delete({
         delete_obj,
         unmark_obj,
@@ -317,7 +334,12 @@ class MDStore {
         }
     }
 
-    // This is for the 2, 3 and 3` for latest removal (3 objects)
+    /**
+     * This is for the 2, 3 and 3` for latest removal (3 objects)
+     * @param {nb.ObjectMD} obj
+     * @param {nb.ObjectMD} [latest_obj]
+     * @returns {Promise<nb.ObjectMD>}
+     */
     async insert_object_delete_marker_move_latest_with_delete(obj, latest_obj) {
         const delete_marker = await this._delete_marker_from_obj(obj, obj.version_enabled);
         const bulk = this._objects.col().initializeOrderedBulkOp();
@@ -343,6 +365,9 @@ class MDStore {
         return delete_marker;
     }
 
+    /**
+     * @returns {Promise<number>}
+     */
     async alloc_object_version_seq() {
         // empty query, we maintain a single doc in this collection
         const query = {};
@@ -356,7 +381,29 @@ class MDStore {
         return res.value.object_version_seq;
     }
 
-    // TODO define indexes used by find_objects()
+    /**
+     * TODO define indexes used by find_objects()
+     * 
+     * @typedef {Object} FindObjectsParams
+     * @property {nb.ID} bucket_id
+     * @property {string|RegExp} key
+     * @property {boolean} [upload_mode]
+     * @property {boolean} [latest_versions]
+     * @property {boolean} [filter_delete_markers]
+     * @property {number} [max_create_time]
+     * @property {number} [skip]
+     * @property {number} [limit]
+     * @property {string} [sort]
+     * @property {1|-1} [order]
+     * @property {boolean} [pagination]
+     * 
+     * @typedef {Object} FindObjectsReply
+     * @property {nb.ObjectMD[]} objects
+     * @property {{ non_paginated: Object, by_mode: Object }} counters
+     * 
+     * @param {FindObjectsParams} params
+     * @returns {Promise<FindObjectsReply>}
+     */
     async find_objects({
         bucket_id,
         key,
@@ -808,6 +855,10 @@ class MDStore {
         }, compact_updates(set_updates, unset_updates));
     }
 
+    /**
+     * @param {nb.ID} multipart_id
+     * @returns {Promise<nb.ObjectMultipart>}
+     */
     find_multipart_by_id(multipart_id) {
         return this._multiparts.col().findOne({
                 _id: multipart_id,
@@ -815,10 +866,20 @@ class MDStore {
             .then(obj => mongo_utils.check_entity_not_deleted(obj, 'multipart'));
     }
 
-    find_all_multiparts_of_object(obj_id) {
+    /**
+     * @param {nb.ID} obj_id
+     * @returns {Promise<nb.ObjectMultipart[]>}
+     */
+    async find_all_multiparts_of_object(obj_id) {
         return this._multiparts.col().find({ obj: obj_id, deleted: null }).toArray();
     }
 
+    /**
+     * @param {nb.ID} obj_id
+     * @param {number} [num_gt]
+     * @param {number} [limit]
+     * @returns {Promise<nb.ObjectMultipart[]>}
+     */
     find_completed_multiparts_of_object(obj_id, num_gt, limit) {
         return this._multiparts.col().find({
                 obj: obj_id,

@@ -4,19 +4,19 @@
 /** @typedef {typeof import('../../sdk/nb')} nb */
 
 const _ = require('lodash');
-const util = require('util');
+// const util = require('util');
 
-const P = require('../../util/promise');
-const dbg = require('../../util/debug_module')(__filename);
+// const P = require('../../util/promise');
+// const dbg = require('../../util/debug_module')(__filename);
 const config = require('../../../config.js');
-const mapper = require('./mapper');
+// const mapper = require('./mapper');
 const MDStore = require('./md_store').MDStore;
 const map_server = require('./map_server');
-const server_rpc = require('../server_rpc');
+// const server_rpc = require('../server_rpc');
 const mongo_utils = require('../../util/mongo_utils');
-const auth_server = require('../common_services/auth_server');
-const system_store = require('../system_services/system_store').get_instance();
-const node_allocator = require('../node_services/node_allocator');
+// const auth_server = require('../common_services/auth_server');
+// const system_store = require('../system_services/system_store').get_instance();
+// const node_allocator = require('../node_services/node_allocator');
 const { ChunkDB } = require('./map_db_types');
 
 /**
@@ -141,59 +141,59 @@ async function read_parts_mapping(parts) {
 }
 
 
-/**
- * @param {nb.Chunk[]} chunks
- * @param {nb.LocationInfo} [location_info]
- */
-async function update_chunks_on_read(chunks, location_info) {
-    // const chunks = _.map(parts, 'chunk');
-    // const tiering_status_by_bucket_id = {};
+// /**
+//  * @param {nb.Chunk[]} chunks
+//  * @param {nb.LocationInfo} [location_info]
+//  */
+// async function update_chunks_on_read(chunks, location_info) {
+//     const chunks = _.map(parts, 'chunk');
+//     const tiering_status_by_bucket_id = {};
 
-    // for (const chunk of chunks) {
-    //     map_server.populate_chunk(chunk);
-    // }
+//     for (const chunk of chunks) {
+//         map_server.populate_chunk(chunk);
+//     }
 
-    // await _load_chunk_mappings(chunks, tiering_status_by_bucket_id);
+//     await _load_chunk_mappings(chunks, tiering_status_by_bucket_id);
 
-    // const chunks_to_scrub = [];
-    // try {
-    //     const bucket = system_store.data.get_by_id(chunks[0].bucket);
-    //     const tiering_status = tiering_status_by_bucket_id[bucket._id];
-    //     const selected_tier = mapper.select_tier_for_write(bucket.tiering, tiering_status);
-    //     for (const chunk of chunks) {
-    //         map_server.populate_chunk(chunk);
-    //         if (!chunk.tier._id || !_.isEqual(chunk.tier._id, selected_tier._id)) {
-    //             dbg.log0('Chunk with low tier will be sent for rebuilding', chunk);
-    //             chunks_to_scrub.push(chunk);
-    //         } else if (location_info) {
-    //             const chunk_info = mapper.get_chunk_info(chunk);
-    //             const mapping = mapper.map_chunk(chunk_info, chunk.tier, bucket.tiering, tiering_status, location_info);
-    //             if (mapper.should_rebuild_chunk_to_local_mirror(mapping, location_info)) {
-    //                 dbg.log2('Chunk with following mapping will be sent for rebuilding', chunk, mapping);
-    //                 chunks_to_scrub.push(chunk);
-    //             }
-    //         }
-    //     }
-    //     if (chunks_to_scrub.length) {
-    //         dbg.log1('Chunks wasn\'t found in local pool - the following will be rebuilt:', util.inspect(chunks_to_scrub));
-    //         await server_rpc.client.scrubber.build_chunks({
-    //             chunk_ids: _.map(chunks_to_scrub, '_id'),
-    //             tier: selected_tier._id,
-    //         }, {
-    //             auth_token: auth_server.make_auth_token({
-    //                 system_id: chunks_to_scrub[0].system,
-    //                 role: 'admin'
-    //             })
-    //         });
-    //     }
-    // } catch (err) {
-    //     dbg.warn('Chunks failed to rebuilt - skipping');
-    // }
-    // if (chunks_to_scrub.length) {
-    //     // mismatch type...
-    //     await MDStore.instance().load_blocks_for_chunks(chunks);
-    // }
-}
+//     const chunks_to_scrub = [];
+//     try {
+//         const bucket = system_store.data.get_by_id(chunks[0].bucket);
+//         const tiering_status = tiering_status_by_bucket_id[bucket._id];
+//         const selected_tier = mapper.select_tier_for_write(bucket.tiering, tiering_status);
+//         for (const chunk of chunks) {
+//             map_server.populate_chunk(chunk);
+//             if (!chunk.tier._id || !_.isEqual(chunk.tier._id, selected_tier._id)) {
+//                 dbg.log0('Chunk with low tier will be sent for rebuilding', chunk);
+//                 chunks_to_scrub.push(chunk);
+//             } else if (location_info) {
+//                 const chunk_info = mapper.get_chunk_info(chunk);
+//                 const mapping = mapper.map_chunk(chunk_info, chunk.tier, bucket.tiering, tiering_status, location_info);
+//                 if (mapper.should_rebuild_chunk_to_local_mirror(mapping, location_info)) {
+//                     dbg.log2('Chunk with following mapping will be sent for rebuilding', chunk, mapping);
+//                     chunks_to_scrub.push(chunk);
+//                 }
+//             }
+//         }
+//         if (chunks_to_scrub.length) {
+//             dbg.log1('Chunks wasn\'t found in local pool - the following will be rebuilt:', util.inspect(chunks_to_scrub));
+//             await server_rpc.client.scrubber.build_chunks({
+//                 chunk_ids: _.map(chunks_to_scrub, '_id'),
+//                 tier: selected_tier._id,
+//             }, {
+//                 auth_token: auth_server.make_auth_token({
+//                     system_id: chunks_to_scrub[0].system,
+//                     role: 'admin'
+//                 })
+//             });
+//         }
+//     } catch (err) {
+//         dbg.warn('Chunks failed to rebuilt - skipping');
+//     }
+//     if (chunks_to_scrub.length) {
+//         // mismatch type...
+//         await MDStore.instance().load_blocks_for_chunks(chunks);
+//     }
+// }
 
 // sanitizing start & end: we want them to be integers, positive, up to obj.size.
 function sanitize_object_range(obj, start, end) {

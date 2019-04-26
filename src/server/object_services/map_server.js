@@ -176,7 +176,6 @@ class GetMapping {
         const allocated_hosts = avoid_blocks.map(block => block.node.host_id);
         const preallocate_list = [];
 
-        console.log('PIPI', chunk);
         const has_room = enough_room_in_tier(chunk.tier, chunk.bucket);
         for (const frag of chunk.frags) {
             for (const block of frag.blocks) {
@@ -185,7 +184,7 @@ class GetMapping {
                 if (!node) {
                     dbg.warn(`GetMapping allocate_blocks: no nodes for allocation ` +
                         `avoid_nodes ${avoid_nodes.join(',')} ` +
-                        `allocation_pools ${block.allocation_pools.join(',')} `
+                        `allocation_pools [${block.allocation_pools ? block.allocation_pools.join(',') : ''}]`
                     );
                     return false;
                 }
@@ -506,9 +505,7 @@ async function populate_chunks(chunks) {
         /** @type {unknown} */
         (_.flatMapDeep(chunks, chunk => chunk.frags.map(frag => frag.blocks)))
     );
-    console.log('BLOCKS BEFORE', blocks);
     await nodes_client.instance().populate_nodes_for_map(chunks[0].bucket.system._id, blocks, 'node_id', 'node');
-    console.log('BLOCKS AFTER', blocks);
     for (const chunk of chunks) {
         chunk.is_accessible = false;
         let num_accessible_frags = 0;
@@ -523,7 +520,6 @@ async function populate_chunks(chunks) {
                     frag.is_accessible = true;
                     num_accessible_frags += 1;
                 }
-                console.log('BLOCK', block);
             }
         }
         if (num_accessible_frags >= chunk.chunk_coder_config.data_frags) {

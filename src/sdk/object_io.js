@@ -29,21 +29,22 @@ Object.isFrozen(RpcError); // otherwise unused
 /**
  * @typedef {Object} UploadParams
  * @property {Object} client
- * @property {string} obj_id
  * @property {string} bucket
  * @property {string} key
- * @property {string} content_type
  * @property {number} size
- * @property {string} md5_b64
- * @property {string} sha256_b64
- * @property {Object} xattr
- * @property {Object} md_conditions
- * @property {Object} copy_source
+ * @property {stream.Readable} source_stream
+ * @property {string} [content_type]
+ * @property {number} [num] multipart number
+ * @property {string} [md5_b64]
+ * @property {string} [sha256_b64]
+ * @property {Object} [xattr]
+ * @property {Object} [md_conditions]
+ * @property {Object} [copy_source]
+ * @property {string} [obj_id]
  * @property {string} [tier_id]
  * @property {string} [bucket_id]
  * @property {string} [multipart_id]
  * @property {boolean} [chunked_content]
- * @property {stream.Readable} [source_stream]
  * @property {Object} [desc]
  * @property {number} [start]
  * @property {number} [seq]
@@ -52,13 +53,13 @@ Object.isFrozen(RpcError); // otherwise unused
  * 
  * @typedef {Object} ReadParams
  * @property {Object} client
- * @property {nb.ObjectMD} object_md
+ * @property {nb.ObjectInfo} object_md
  * @property {number} [start]
  * @property {number} [end]
  * @property {number} [watermark]
  * 
  * @typedef {Object} CachedRead
- * @property {nb.ObjectMD} object_md
+ * @property {nb.ObjectInfo} object_md
  * @property {Buffer} buffer
  * 
  * 
@@ -260,7 +261,7 @@ class ObjectIO {
     async _upload_copy(params, complete_params) {
         const { obj_id, bucket, key, version_id, ranges } = params.copy_source;
         if (bucket === params.bucket && !ranges) {
-            /** @type {{ object_md: nb.ObjectMD, num_parts: number }} */
+            /** @type {{ object_md: nb.ObjectInfo, num_parts: number }} */
             const { object_md, num_parts } = await params.client.object.copy_object_mapping({
                 bucket: params.bucket,
                 key: params.key,
@@ -646,7 +647,7 @@ class ObjectIO {
             make_key(params) {
                 const aligned_start = range_utils.align_down(params.start, config.IO_OBJECT_RANGE_ALIGN);
                 const aligned_end = aligned_start + config.IO_OBJECT_RANGE_ALIGN;
-                return params.object_md._id.toHexString() + '\0' + aligned_start + '\0' + aligned_end;
+                return params.object_md.obj_id + '\0' + aligned_start + '\0' + aligned_end;
             },
             /**
              * @param {ReadParams} params
