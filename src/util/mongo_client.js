@@ -53,7 +53,7 @@ class MongoClient extends EventEmitter {
             bufferMaxEntries: 0,
 
             // replset
-            keepAlive: 1,
+            keepAlive: true,
             connectTimeoutMS: 30000,
             socketTimeoutMS: 0,
 
@@ -82,6 +82,9 @@ class MongoClient extends EventEmitter {
 
     }
 
+    /**
+     * @returns {MongoClient}
+     */
     static instance() {
         if (!MongoClient._instance) MongoClient._instance = new MongoClient();
         return MongoClient._instance;
@@ -582,7 +585,8 @@ class MongoClient extends EventEmitter {
                 dbg.error('Connection closed for more ', config.MONGO_DEFAULTS.CONNECT_MAX_WAIT,
                     ', quitting');
                 process.exit(1);
-            }, config.MONGO_DEFAULTS.CONNECT_MAX_WAIT).unref();
+            }, config.MONGO_DEFAULTS.CONNECT_MAX_WAIT);
+            this.connect_timeout.unref();
         }
     }
 

@@ -358,7 +358,7 @@ class MapClient {
 
                 return this.rpc_client.block_store.replicate_block({
                     target: block.to_block_md(),
-                    source: block.to_block_md(),
+                    source: source_block.to_block_md(),
                 }, {
                     address: block.address,
                     timeout: config.IO_REPLICATE_BLOCK_TIMEOUT,

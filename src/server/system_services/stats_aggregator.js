@@ -728,7 +728,9 @@ async function _notify_latest_version() {
             same_major_latest_val = (major * 10000) + (minor * 100) + patch;
         }
 
-        const is_same_major_latest_alpha = same_major_latest.split('-').length > 1 && same_major_latest.split('-')[1] === 'alpha';
+        const is_same_major_latest_alpha = same_major_latest &&
+            same_major_latest.split('-').length > 1 &&
+            same_major_latest.split('-')[1] === 'alpha';
         const is_latest_version_alpha = latest_version.split('-').length > 1 && latest_version.split('-')[1] === 'alpha';
 
         if (!is_same_major_latest_alpha && same_major_latest && current_val < same_major_latest_val) {

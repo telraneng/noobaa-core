@@ -39,7 +39,7 @@ coretest.describe_mapper_test_case({
 }) => {
 
     // TODO we need to create more nodes and pools to support all MAPPER_TEST_CASES
-    if (data_placement !== 'SPREAD' || num_pools !== 1 || total_blocks > 10) return;
+    if (total_blocks > 10) return;
 
     const bucket = bucket_name;
     const KEY = 'test-object-io-key';

@@ -1,7 +1,6 @@
 /* Copyright (C) 2016 NooBaa */
 'use strict';
 
-const P = require('../util/promise');
 const WaitQueue = require('./wait_queue');
 const dbg = require('./debug_module')(__filename);
 

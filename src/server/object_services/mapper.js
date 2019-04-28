@@ -23,19 +23,16 @@ function select_tier_for_write(tiering, tiering_status, start_tier_order) {
     for (const t of tiering.tiers) {
         if (t.disabled) continue;
         if (start_tier_order >= 0 && t.order < start_tier_order) continue;
+        if (!selected) selected = t;
         const tier_status = tiering_status[t.tier._id.toHexString()];
         const tier_has_space = t.tier.mirrors.every((mirror, i) =>
             size_utils.json_to_bigint(tier_status.mirrors_storage[i].free)
             .greater(config.MIN_TIER_FREE_THRESHOLD)
         );
         if (!tier_has_space) continue;
-        if (selected) {
-            if (t.order < selected.order) selected = t;
-        } else {
-            selected = t;
-        }
+        if (t.order < selected.order) selected = t;
     }
-    return selected.tier;
+    return selected && selected.tier;
 }
 
 
