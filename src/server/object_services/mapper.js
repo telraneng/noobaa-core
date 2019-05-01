@@ -205,7 +205,7 @@ function map_chunk(chunk, tier, tiering, tiering_status, location_info) {
                 // can be accessible but will eventually be deallocated
                 const block_pool_in_mirror = mirror.spread_pools.find(pool => pool._id.toHexString() === block.pool_id.toHexString());
                 const is_misplaced = !block.node.writable;
-                if (is_misplaced && block_pool_in_mirror) {
+                if (!is_misplaced && block_pool_in_mirror) {
                     used_blocks.push(block);
                     // Also we calculate the weight of the current block allocations
                     // Notice that we do not calculate bad blocks into the weight

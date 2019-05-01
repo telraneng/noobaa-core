@@ -13,6 +13,7 @@
 - [x] map_reader.read_node_mapping
 - [x] map_reader should share prepare_chunks_group with map_server
 - [x] map_server - allocate_chunk should sort allocations by location_info
+- [ ] map_builder - handle objects
 
 - [ ] object_io - upload_copy should pass the object_md to read_object_stream - where to get it?
 

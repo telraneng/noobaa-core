@@ -131,9 +131,10 @@ class MapBuilder {
 
             try {
                 if (!chunk.parts || !chunk.parts.length) throw new Error('No valid parts are pointing to chunk' + chunk._id);
-                if (!chunk.objects || !chunk.objects.length) throw new Error('No valid objects are pointing to chunk' + chunk._id);
+                // TODO handle objects in map_builder
+                // if (!chunk.objects || !chunk.objects.length) throw new Error('No valid objects are pointing to chunk' + chunk._id);
 
-                if (!chunk.bucket._id) await this.populate_chunk_bucket(chunk);
+                // if (!chunk.bucket._id) await this.populate_chunk_bucket(chunk); 
                 if (!chunk.tier._id) { // tier was deleted?
                     await node_allocator.refresh_tiering_alloc(chunk.bucket.tiering);
                     const tiering_status = node_allocator.get_tiering_status(chunk.bucket.tiering);

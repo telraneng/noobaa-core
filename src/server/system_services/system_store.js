@@ -717,6 +717,7 @@ class SystemStore extends EventEmitter {
                 target: ''
             });
         }
+        return P.resolve();
     }
 
     make_changes_in_background(changes) {

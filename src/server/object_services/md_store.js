@@ -145,7 +145,7 @@ class MDStore {
      * @returns {Promise<nb.ObjectMD[]>}
      */
     async find_objects_by_id(obj_ids) {
-        return this._objects.col().find({ _id: { $in: obj_ids } });
+        return this._objects.col().find({ _id: { $in: obj_ids } }).toArray();
     }
 
     /**

@@ -44,10 +44,10 @@ function _should_log_to_file() {
     return true;
 }
 
-// override the default inspect options
-util.inspect.defaultOptions.depth = 10;
-util.inspect.defaultOptions.colors = true;
-util.inspect.defaultOptions.breakLength = Infinity;
+// // override the default inspect options
+// util.inspect.defaultOptions.depth = 10;
+// util.inspect.defaultOptions.colors = true;
+// util.inspect.defaultOptions.breakLength = Infinity;
 
 
 //Detect our context, node/atom/browser
