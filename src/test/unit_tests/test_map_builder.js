@@ -6,7 +6,7 @@ const coretest = require('./coretest');
 coretest.setup();
 
 const _ = require('lodash');
-const util = require('util');
+// const util = require('util');
 const mocha = require('mocha');
 const assert = require('assert');
 const crypto = require('crypto');

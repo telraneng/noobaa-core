@@ -9,7 +9,7 @@ const _ = require('lodash');
 const dbg = require('../../util/debug_module')(__filename);
 const config = require('../../../config');
 const size_utils = require('../../util/size_utils');
-const system_store = require('../system_services/system_store').get_instance();
+// const system_store = require('../system_services/system_store').get_instance();
 
 
 /**
@@ -317,46 +317,46 @@ function _block_sort_newer_first(block1, block2) {
  * @param {nb.Block} block1
  * @param {nb.Block} block2
  */
-function _block_sorter_basic(block1, block2) {
-    const node1 = block1.node;
-    const node2 = block2.node;
-    if (node2.readable && !node1.readable) return 1;
-    if (node1.readable && !node2.readable) return -1;
-    return node2.heartbeat - node1.heartbeat;
-}
+// function _block_sorter_basic(block1, block2) {
+//     const node1 = block1.node;
+//     const node2 = block2.node;
+//     if (node2.readable && !node1.readable) return 1;
+//     if (node1.readable && !node2.readable) return -1;
+//     return node2.heartbeat - node1.heartbeat;
+// }
 
 /**
  * locality sorting function for blocks
  * @param {nb.LocationInfo} location_info
  */
-function _block_sorter_local(location_info) {
-    return sort_func;
-    /**
-     * locality sorting function for blocks
-     * @param {nb.Block} block1
-     * @param {nb.Block} block2
-     */
-    function sort_func(block1, block2) {
-        const node1 = block1.node;
-        const node2 = block2.node;
-        const { node_id, host_id, pool_id, region } = location_info;
-        if (node2.readable && !node1.readable) return 1;
-        if (node1.readable && !node2.readable) return -1;
-        if (String(node2._id) === node_id && String(node1._id) !== node_id) return 1;
-        if (String(node1._id) === node_id && String(node2._id) !== node_id) return -1;
-        if (node2.host_id === host_id && node1.host_id !== host_id) return 1;
-        if (node1.host_id === host_id && node2.host_id !== host_id) return -1;
-        if (String(block2.pool) === pool_id && String(block1.pool) !== pool_id) return 1;
-        if (String(block1.pool) === pool_id && String(block2.pool) !== pool_id) return -1;
-        if (region) {
-            const pool1 = system_store.data.get_by_id(block1.pool);
-            const pool2 = system_store.data.get_by_id(block2.pool);
-            if (pool2.region === region && pool1.region !== region) return 1;
-            if (pool1.region === region && pool2.region !== region) return -1;
-        }
-        return node2.heartbeat - node1.heartbeat;
-    }
-}
+// function _block_sorter_local(location_info) {
+//     return sort_func;
+//     /**
+//      * locality sorting function for blocks
+//      * @param {nb.Block} block1
+//      * @param {nb.Block} block2
+//      */
+//     function sort_func(block1, block2) {
+//         const node1 = block1.node;
+//         const node2 = block2.node;
+//         const { node_id, host_id, pool_id, region } = location_info;
+//         if (node2.readable && !node1.readable) return 1;
+//         if (node1.readable && !node2.readable) return -1;
+//         if (String(node2._id) === node_id && String(node1._id) !== node_id) return 1;
+//         if (String(node1._id) === node_id && String(node2._id) !== node_id) return -1;
+//         if (node2.host_id === host_id && node1.host_id !== host_id) return 1;
+//         if (node1.host_id === host_id && node2.host_id !== host_id) return -1;
+//         if (String(block2.pool) === pool_id && String(block1.pool) !== pool_id) return 1;
+//         if (String(block1.pool) === pool_id && String(block2.pool) !== pool_id) return -1;
+//         if (region) {
+//             const pool1 = system_store.data.get_by_id(block1.pool);
+//             const pool2 = system_store.data.get_by_id(block2.pool);
+//             if (pool2.region === region && pool1.region !== region) return 1;
+//             if (pool1.region === region && pool2.region !== region) return -1;
+//         }
+//         return node2.heartbeat - node1.heartbeat;
+//     }
+// }
 
 
 /**
