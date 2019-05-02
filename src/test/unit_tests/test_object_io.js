@@ -72,24 +72,31 @@ coretest.describe_mapper_test_case({
         key_counter += 1;
         const content_type = 'application/octet-stream';
         const content_type2 = 'text/plain';
+        console.log(`--- create_object_upload`);
         const { obj_id } = await rpc_client.object.create_object_upload({ bucket, key, content_type });
+        console.log(`--- complete_object_upload`);
         await rpc_client.object.complete_object_upload({ obj_id, bucket, key });
+        console.log(`--- read_object_md`);
         const object_md = await rpc_client.object.read_object_md({ bucket, key });
         assert.strictEqual(object_md.num_parts, 0);
         assert.strictEqual(object_md.capacity_size, 0);
+        console.log(`--- update_object_md`);
         await rpc_client.object.update_object_md({ bucket, key, content_type: content_type2 });
+        console.log(`--- list_objects_admin`);
         await rpc_client.object.list_objects_admin({ bucket, prefix: key });
+        console.log(`--- delete_object`);
         await rpc_client.object.delete_object({ bucket, key });
+        console.log(`--- empty object: OK`);
     });
 
-    mocha.it.only('upload_and_verify', async function() {
+    mocha.it('upload_and_verify', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
         for (let i = 0; i < small_loops; ++i) await upload_and_verify(61);
         for (let i = 0; i < medium_loops; ++i) await upload_and_verify(4015);
         for (let i = 0; i < big_loops; ++i) await upload_and_verify(10326);
     });
 
-    mocha.it.only('multipart_upload_and_verify', async function() {
+    mocha.it('multipart_upload_and_verify', async function() {
         this.timeout(600000); // eslint-disable-line no-invalid-this
         for (let i = 0; i < small_loops; ++i) await multipart_upload_and_verify(45, 7);
         for (let i = 0; i < medium_loops; ++i) await multipart_upload_and_verify(3245, 5);
@@ -109,12 +116,17 @@ coretest.describe_mapper_test_case({
             content_type: 'application/octet-stream',
             source_stream: readable_buffer(data),
         };
+        console.log(`--- upload_object`);
         await object_io.upload_object(params);
+        console.log(`--- verify_read_mappings`);
         await verify_read_mappings(key, size);
+        console.log(`--- verify_read_data`);
         await verify_read_data(key, data, params.obj_id);
+        console.log(`--- verify_nodes_mapping`);
         await verify_nodes_mapping();
+        console.log(`--- delete_object`);
         await rpc_client.object.delete_object({ bucket, key });
-        console.log('upload_and_verify: OK', size);
+        console.log('--- upload_and_verify: OK', size);
     }
 
     async function multipart_upload_and_verify(part_size, num_parts) {
