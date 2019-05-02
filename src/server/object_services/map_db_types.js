@@ -165,7 +165,7 @@ class FragDB {
         this.frag_db = frag_db;
         this.data = undefined_buffer;
         /** @type {nb.AllocationInfo[]} */
-        this.allocations = undefined;
+        this.allocations = [];
         this.is_accessible = false;
         this.is_building_blocks = false;
 
