@@ -10,6 +10,7 @@ const _ = require('lodash');
 const mocha = require('mocha');
 const assert = require('assert');
 const crypto = require('crypto');
+const util = require('util');
 
 const P = require('../../util/promise');
 const mapper = require('../../server/object_services/mapper');
@@ -20,6 +21,7 @@ const map_builder = require('../../server/object_services/map_builder');
 const map_deleter = require('../../server/object_services/map_deleter');
 const SliceReader = require('../../util/slice_reader');
 const system_store = require('../../server/system_services/system_store').get_instance();
+const { ChunkDB } = require('../../server/object_services/map_db_types');
 
 const { rpc_client } = coretest;
 const object_io = new ObjectIO();
@@ -211,6 +213,7 @@ coretest.describe_mapper_test_case({
         _.forEach(chunks, chunk => {
             console.log('Checking chunk fully built', chunk);
             const tiering = system_store.data.systems[0].buckets_by_name[bucket].tiering;
+            /** @type {nb.TieringStatus} */
             const tiering_status = _.fromPairs(_.map(tiering.tiers,
                 ({ tier, spillover }) => [tier._id, {
                     pools: _.fromPairs(_.map(system_store.data.pools,
@@ -224,13 +227,20 @@ coretest.describe_mapper_test_case({
                 }]
             ));
             chunk.chunk_coder_config = chunk_coder_config;
-            const chunk_info = mapper.get_chunk_info(chunk);
+            const chunk_info = new ChunkDB(chunk);
+
             const select_tier = mapper.select_tier_for_write(tiering, tiering_status);
-            const mapping = mapper.map_chunk(chunk_info, select_tier, tiering, tiering_status);
-            console.log('Chunk mapping', mapping);
-            assert.strictEqual(mapping.allocations, undefined);
-            assert.strictEqual(mapping.deletions, undefined);
-            assert.strictEqual(mapping.missing_frags, undefined);
+            console.log('JAJA select_tier', select_tier);
+            mapper.map_chunk(chunk_info, select_tier, tiering, tiering_status);
+            console.log('Chunk mapping', util.inspect(chunk_info.frags, { depth: 4 }));
+            chunk_info.frags.forEach(frag => {
+                assert.strictEqual(frag.allocations.length, 0);
+                const deletions = frag.blocks.filter(block => block.is_deletion || block.is_future_deletion);
+                assert.strictEqual(deletions.length, 0);
+            });
+            // assert.strictEqual(mapping.allocations, undefined);
+            // assert.strictEqual(mapping.deletions, undefined);
+            // assert.strictEqual(mapping.missing_frags, undefined);
         });
 
         const read_data = await object_io.read_entire_object({ client: rpc_client, bucket, key, obj_id });
