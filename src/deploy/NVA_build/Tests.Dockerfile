@@ -78,4 +78,4 @@ RUN mkdir -p /data && \
     chmod -R g=u /data 
 
 USER 10001:0
-CMD ["./src/test/unit_tests/run_npm_test_on_test_container.sh"]
+CMD ["./src/test/unit_tests/run_npm_test_on_test_container.sh", "--single", "example.test.js"]
