@@ -8,6 +8,6 @@ const tests = [{
     server_mem: '400Mi',
     agent_cpu: '250m',
     agent_mem: '150Mi'
-} ;
+}];
 
 module.exports = tests;
