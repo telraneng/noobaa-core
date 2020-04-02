@@ -18,7 +18,7 @@ function usage(){
     echo "--image           -   The image to test"
     echo "--tester_image    -   The tester image to use"
     echo "--job_yaml        -   The job yaml file, (default: ./test_job.yaml)"
-	echo "--tests_list      -   The test list (.js) (default: ./pipeline_tests_list.j})"
+	  echo "--tests_list      -   The test list (.js) (default: ./pipeline_tests_list.j})"
     echo "--concurrency     -   Set the number of test that runs in parallel (default: 1)"
     echo "--delete_on_fail  -   When set, will check if the test has failed. if so skip it's deletion"   
     echo "--wait            -   Should wait for job completion, (default: false)"
@@ -32,14 +32,16 @@ do
     case ${1} in
         --name)             TEST_RUN_NAME=${2}
                             shift 2;;
+        --branch)           BRANCH_NAME=${2}
+                            shift 2;;
         --image)            IMAGE=${2}
                             shift 2;;
         --tester_image)     TESTER_IMAGE=${2}
                             shift 2;;
         --job_yaml)         JOB_YAML=${2}
                             shift 2;;
-		--tests_list)       TESTS_LIST=${2}
-						    shift 2;;
+		    --tests_list)       TESTS_LIST=${2}
+						                shift 2;;
         --concurrency)      TESTS_CONCURRENCY=\"${2}\"
                             shift 2;;
         --wait)             WAIT_COMPLETION=true
@@ -83,6 +85,7 @@ sed -e "s~NOOBAA_IMAGE_PLACEHOLDER~${IMAGE}~" \
 -e "s~TESTS_LIST_PLACEHOLDER~${TESTS_LIST}~" \
 -e "s~TESTS_CONCURRENCY_PLACEHOLDER~${TESTS_CONCURRENCY}~" \
 -e "s~DELETE_ON_FAIL_PLACEHOLDER~${TESTS_DELETE_ON_FAIL}~" \
+-e "s~BRANCH_NAME_PLACEHOLDER~${BRANCH_NAME}~" \
 ${JOB_YAML} \
 | kubectl -n ${NAMESPACE} apply -f -
 
