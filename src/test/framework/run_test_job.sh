@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# --name "tc-555" --image "noobaa-tc-555" --tester_image "noobaa-tester-tc-555" --job_yaml ../../../.travis/travis_test_job.yaml --wait
 export PS4='\e[36m+ ${FUNCNAME:-main}\e[0m@\e[32m${BASH_SOURCE}:\e[35m${LINENO} \e[0m'
 
 SCRIPT_NAME=$(basename $0)
@@ -18,7 +19,7 @@ function usage(){
     echo "--image           -   The image to test"
     echo "--tester_image    -   The tester image to use"
     echo "--job_yaml        -   The job yaml file, (default: ./test_job.yaml)"
-	echo "--tests_list      -   The test list (.js) (default: ./pipeline_tests_list.j})"
+	  echo "--tests_list      -   The test list (.js) (default: ./pipeline_tests_list.j})"
     echo "--concurrency     -   Set the number of test that runs in parallel (default: 1)"
     echo "--delete_on_fail  -   When set, will check if the test has failed. if so skip it's deletion"   
     echo "--wait            -   Should wait for job completion, (default: false)"
@@ -38,8 +39,8 @@ do
                             shift 2;;
         --job_yaml)         JOB_YAML=${2}
                             shift 2;;
-		--tests_list)       TESTS_LIST=${2}
-						    shift 2;;
+		    --tests_list)       TESTS_LIST=${2}
+						                shift 2;;
         --concurrency)      TESTS_CONCURRENCY=\"${2}\"
                             shift 2;;
         --wait)             WAIT_COMPLETION=true
