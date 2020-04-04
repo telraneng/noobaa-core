@@ -56,12 +56,12 @@ async function main() {
 }
 
 async function print_my_name_test() {
-    console.log('=== TESTER NAME: Evgeny Maizler')
+    console.log('====== ASSIGNMENT OUTPUT TESTER NAME: Evgeny Maizler')
 }
 
 async function print_branch_name() {
     const branch_name = process.env.BRANCH_NAME;
-    console.log('=== BRANCH NAME: %s', branch_name)
+    console.log('====== ASSIGNMENT OUTPUT BRANCH NAME: %s', branch_name)
 }
 
 async function run_test() {
