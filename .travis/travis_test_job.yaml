@@ -12,18 +12,18 @@ spec:
         imagePullPolicy: Never
         workingDir: /noobaa-core
         args:
-          # - /bin/bash
-          #  - -c
-          #  - "while true; do sleep 10 ; done"
+           - /bin/bash
+            - -c
+            - "echo Evgeny; echo PR branch name BRANCH_NAME_PLACEHOLDER"
 
-          - node
-          - ./src/test/framework/test_env_builder_kubernetes.js
-          - --image
-          - "NOOBAA_IMAGE_PLACEHOLDER"
-          - --namespace_prefix
-          - "NAMESPACE_PREFIX_PLACEHOLDER"
-          - --tests_list
-          - /noobaa-core/src/test/framework/sanity_tests_list.js
+#          - node
+#          - ./src/test/framework/test_env_builder_kubernetes.js
+#          - --image
+#          - "NOOBAA_IMAGE_PLACEHOLDER"
+#          - --namespace_prefix
+#          - "NAMESPACE_PREFIX_PLACEHOLDER"
+#          - --tests_list
+#          - /noobaa-core/src/test/framework/example_tests_list.js
         env:
           - name: CONTAINER_PLATFORM
             value: KUBERNETES

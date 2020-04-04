@@ -33,6 +33,8 @@ do
     case ${1} in
         --name)             TEST_RUN_NAME=${2}
                             shift 2;;
+        --branch)           BRANCH_NAME=${2}
+                            shift 2;;
         --image)            IMAGE=${2}
                             shift 2;;
         --tester_image)     TESTER_IMAGE=${2}
@@ -84,6 +86,7 @@ sed -e "s~NOOBAA_IMAGE_PLACEHOLDER~${IMAGE}~" \
 -e "s~TESTS_LIST_PLACEHOLDER~${TESTS_LIST}~" \
 -e "s~TESTS_CONCURRENCY_PLACEHOLDER~${TESTS_CONCURRENCY}~" \
 -e "s~DELETE_ON_FAIL_PLACEHOLDER~${TESTS_DELETE_ON_FAIL}~" \
+-e "s~BRANCH_NAME_PLACEHOLDER~${BRANCH_NAME}~" \
 ${JOB_YAML} \
 | kubectl -n ${NAMESPACE} apply -f -
 
