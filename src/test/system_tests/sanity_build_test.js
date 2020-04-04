@@ -48,9 +48,7 @@ async function main() {
     TEST_CTX.mgmt_endpoint = `ws://${argv.mgmt_ip}:${argv.mgmt_port}`;
 
     dbg.log0('Running Sanity Build Test');
-//    await run_test();
-    await print_my_name_test();
-    await print_branch_name();
+    await run_test();
     console.log('Finished Sanity Build Test Successfully');
     process.exit(0);
 }
@@ -65,21 +63,23 @@ async function print_branch_name() {
 }
 
 async function run_test() {
-    await init_test();
-
-    try {
-        await create_configuration();
-    } catch (error) {
-        console.warn('Configuration testing failure, caught', error);
-        process.exit(1);
-    }
-
-    try {
-        await test_data();
-    } catch (error) {
-        console.warn('Data testing failure, caught', error);
-        process.exit(1);
-    }
+//    await init_test();
+//
+//    try {
+//        await create_configuration();
+//    } catch (error) {
+//        console.warn('Configuration testing failure, caught', error);
+//        process.exit(1);
+//    }
+//
+//    try {
+//        await test_data();
+//    } catch (error) {
+//        console.warn('Data testing failure, caught', error);
+//        process.exit(1);
+//    }
+    await print_my_name_test();
+    await print_branch_name();
 }
 
 async function init_test() {
