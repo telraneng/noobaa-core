@@ -56,11 +56,12 @@ async function main() {
 }
 
 async function print_my_name_test() {
-    console.log("Evgeny Maizler")
+    console.log("=== TESTER NAME: Evgeny Maizler")
 }
 
 async function print_branch_name() {
-    console.log("Brnach Name: <should be dynamically passed to here")
+    const branch_name = process.env.BRANCH_NAME;
+    console.log("=== BRANCH NAME: ${branch_name}")
 }
 
 async function run_test() {

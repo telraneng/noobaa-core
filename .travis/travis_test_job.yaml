@@ -29,6 +29,8 @@ spec:
             value: KUBERNETES
           - name: SUPPRESS_LOGS
             value: "TRUE"
+          - name: BRANCH_NAME
+            value: BRANCH_NAME_PLACEHOLDER
       restartPolicy: Never
   backoffLimit: 0
 
