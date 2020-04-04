@@ -13,8 +13,8 @@ spec:
         workingDir: /noobaa-core
         args:
            - /bin/bash
-            - -c
-            - "echo Evgeny; echo PR branch name BRANCH_NAME_PLACEHOLDER"
+           - -c
+           - "echo Evgeny; echo PR branch name BRANCH_NAME_PLACEHOLDER"
 
 #          - node
 #          - ./src/test/framework/test_env_builder_kubernetes.js

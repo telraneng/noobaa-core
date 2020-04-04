@@ -16,6 +16,7 @@ function usage(){
     echo -e "\nRun NooBaa system tests job"
     echo "Parameters:"
     echo "--name            -   The name of the test run. will be prefixed to all namespaces created by the test job"
+    echo "--branch          -   The name of the branch changes arrived from."
     echo "--image           -   The image to test"
     echo "--tester_image    -   The tester image to use"
     echo "--job_yaml        -   The job yaml file, (default: ./test_job.yaml)"
