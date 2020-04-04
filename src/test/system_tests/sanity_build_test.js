@@ -48,9 +48,19 @@ async function main() {
     TEST_CTX.mgmt_endpoint = `ws://${argv.mgmt_ip}:${argv.mgmt_port}`;
 
     dbg.log0('Running Sanity Build Test');
-    await run_test();
+//    await run_test();
+    await print_my_name_test();
+    await print_branch_name();
     console.log('Finished Sanity Build Test Successfully');
     process.exit(0);
+}
+
+async function print_my_name_test() {
+    console.log("Evgeny Maizler")
+}
+
+async function print_branch_name() {
+    console.log("Brnach Name: <should be dynamically passed to here")
 }
 
 async function run_test() {
